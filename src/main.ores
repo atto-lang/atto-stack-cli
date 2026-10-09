@@ -256,11 +256,9 @@ fnc walk(String root, String dir, String url, String shape,
     else
       if name == "rpc.ores" | name == "lambda.ores"; then
         let bool targeted = false;
-        if kind == "all" |
-          (kind == "rpc" ? name == "rpc.ores" : false) |
-          (kind == "lambda" ? name == "lambda.ores" : false); then
-          targeted = true;
-        fi
+        if kind == "all"; then targeted = true; fi
+        if kind == "rpc", name == "rpc.ores"; then targeted = true; fi
+        if kind == "lambda", name == "lambda.ores"; then targeted = true; fi
         let bool valid = false;
         if has_leaf; then
           if api; then
