@@ -151,9 +151,9 @@ case "$action" in
       exit 1
     fi
     if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
-      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml .oreslangc.cfg.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
+      tar -czf "$tmp" -C "$root" src oreslang-stack.toml .oreslangc.cfg.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
     else
-      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
+      tar -czf "$tmp" -C "$root" src oreslang-stack.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
     fi
     mv -f -- "$tmp" "$artifact"
     trap - EXIT
