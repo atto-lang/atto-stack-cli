@@ -78,6 +78,12 @@ export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
 export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
 export ORESLANG_STACK_ROLE="${ORESLANG_STACK_ROLE:-}"
+if [[ "$requested_command" == "init" ]]; then
+  case "$ORESLANG_STACK_ROLE" in
+    api|admin-api|web|admin-web) ;;
+    *) echo "oreslang-stack: init requires --role api|admin-api|web|admin-web" >&2; exit 2 ;;
+  esac
+fi
 
 root="${ORESLANG_STACK_ROOT:-.}"
 entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
