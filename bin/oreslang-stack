@@ -18,7 +18,7 @@ fi
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
-Usage: oreslang-stack init --role api|admin-api|web|admin-web [--root DIR]
+Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--root DIR]
        oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
@@ -27,7 +27,7 @@ Usage: oreslang-stack init --role api|admin-api|web|admin-web [--root DIR]
        oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
-init: create a fresh project; never replace src/, generated/ or project manifest.
+init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
 dev: run an Oreslang project once (watch/reload is not implemented).
 build: Oreslang native generators + compiler checks + source-only bundle.
 routes: emit manifest from Oreslang-native route discovery.
@@ -84,8 +84,8 @@ fi
 export ORESLANG_STACK_ROLE="${ORESLANG_STACK_ROLE:-}"
 if [[ "$requested_command" == "init" ]]; then
   case "$ORESLANG_STACK_ROLE" in
-    api|admin-api|web|admin-web) ;;
-    *) echo "oreslang-stack: init requires --role api|admin-api|web|admin-web" >&2; exit 2 ;;
+    api|admin-api|web|admin-web|infra|lambdas) ;;
+    *) echo "oreslang-stack: init requires --role api|admin-api|web|admin-web|infra|lambdas" >&2; exit 2 ;;
   esac
 fi
 
@@ -113,7 +113,9 @@ root="$(cd -- "$root" && pwd -P)"
 export ORESLANG_STACK_ROOT="$root"
 if [[ "$requested_command" == "init" ]]; then
   if [[ -e "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ||
-        -e "$root/src" || -L "$root/src" || -e "$root/generated" || -L "$root/generated" ]]; then
+        -e "$root/src" || -L "$root/src" || -e "$root/generated" || -L "$root/generated" ||
+        -e "$root/.oreslang-stack-infra.candidate.toml" || -L "$root/.oreslang-stack-infra.candidate.toml" ||
+        -e "$root/.oreslang-stack-lambdas.candidate.toml" || -L "$root/.oreslang-stack-lambdas.candidate.toml" ]]; then
     echo "oreslang-stack: init refuses existing project sources or generated paths" >&2
     exit 2
   fi
@@ -145,7 +147,7 @@ admission_permissions=(
   "--allow-read=$root"
 )
 case "$requested_command" in
-  init) admission_permissions+=("--allow-write=$root/oreslang-stack.toml,$root/src,$root/generated") ;;
+  init) admission_permissions+=("--allow-write=$root/oreslang-stack.toml,$root/src,$root/generated,$root/.oreslang-stack-infra.candidate.toml,$root/.oreslang-stack-lambdas.candidate.toml") ;;
   dev|build) admission_permissions+=("--allow-write=$root/src,$root/generated") ;;
   generate)
     if [[ "$ORESLANG_STACK_CHECK" != "true" ]]; then
