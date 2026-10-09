@@ -133,7 +133,9 @@ def stop(proc):
             pass
 
 def await_ready(port, proc, token):
-    for _ in range(75):
+    # Compiling cold Rust or Graal workers can exceed a 3-second probe window.
+    deadline = time.monotonic() + 30
+    while time.monotonic() < deadline:
         if proc.poll() is not None:
             fail("worker exited before readiness")
         try:
