@@ -34,9 +34,21 @@ if [[ "$1" == --allow-env=* ]]; then
             -e "$ORESLANG_STACK_ROOT/src" || -e "$ORESLANG_STACK_ROOT/generated" ]]; then
         printf 'ERROR: native init must refuse populated project\n'
       else
-        mkdir -p "$ORESLANG_STACK_ROOT/src/routes" "$ORESLANG_STACK_ROOT/generated"
+        mkdir -p "$ORESLANG_STACK_ROOT/src"
         printf '[repository]\nrole = "%s"\n' "$ORESLANG_STACK_ROLE" > "$ORESLANG_STACK_ROOT/oreslang-stack.toml"
         printf 'pub routine main(): void { return; }\n' > "$ORESLANG_STACK_ROOT/src/main.ores"
+        if [[ "$ORESLANG_STACK_ROLE" == infra || "$ORESLANG_STACK_ROLE" == lambdas ]]; then
+          printf '[candidate]\nrole = "%s"\ndeployable = false\n' "$ORESLANG_STACK_ROLE" > "$ORESLANG_STACK_ROOT/.oreslang-stack-$ORESLANG_STACK_ROLE.candidate.toml"
+          if [[ "$ORESLANG_STACK_ROLE" == infra ]]; then
+            mkdir -p "$ORESLANG_STACK_ROOT/src/infra"
+            printf 'define module infra_candidate as\nend\n' > "$ORESLANG_STACK_ROOT/src/infra/config.ores"
+          else
+            mkdir -p "$ORESLANG_STACK_ROOT/src/functions/hello"
+            printf 'define module handler as\nend\n' > "$ORESLANG_STACK_ROOT/src/functions/hello/handler.ores"
+          fi
+        else
+          mkdir -p "$ORESLANG_STACK_ROOT/src/routes" "$ORESLANG_STACK_ROOT/generated"
+        fi
         printf 'ORESLANG_STACK_ACTION_v1:initialized\n'
       fi ;;
     dev|build|check)
@@ -130,5 +142,20 @@ if "$repo/bin/oreslang-stack" init --root "$tmp/bad-backend" --role api --backen
   exit 1
 fi
 test ! -e "$tmp/bad-backend/src"
+
+
+for role in infra lambdas; do
+  mkdir -p "$tmp/$role-project"
+  "$repo/bin/oreslang-stack" init --role "$role" --root "$tmp/$role-project" | grep -F "initialized Oreslang $role project"
+  test -s "$tmp/$role-project/.oreslang-stack-$role.candidate.toml"
+  test ! -e "$tmp/$role-project/generated/route-manifest.json"
+done
+mkdir -p "$tmp/occupied-candidate"
+printf 'leave-alone\n' > "$tmp/occupied-candidate/.oreslang-stack-lambdas.candidate.toml"
+if "$repo/bin/oreslang-stack" init --role lambdas --root "$tmp/occupied-candidate"; then
+  echo 'init must refuse pre-existing candidate manifest' >&2
+  exit 1
+fi
+test ! -e "$tmp/occupied-candidate/src"
 
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
