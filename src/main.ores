@@ -40,6 +40,9 @@ fnc repository_role(String root): String {
   if !fs.exists(path); then
     return error("missing oreslang-stack.toml");
   fi
+  if fs.is_dir(path); then
+    return error("project manifest must be a regular file");
+  fi
   val lines = fs.read_text(path).split_literal("\n");
   let String section = "";
   let String role = "";
@@ -98,6 +101,9 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
   if fs.is_symlink(path); then
     return error("symlinked output: " + path);
   fi
+  if fs.is_dir(path); then
+    return error("generated output must be a file: " + path);
+  fi
   if fs.exists(path); then
     val String previous = fs.read_text(path);
     if path.ends_with(".ores"), !previous.starts_with(generated_marker()); then
@@ -139,6 +145,9 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   fi
   if !fs.exists(handler_path); then
     return error("route.ores requires sibling handlers.ores: " + dir);
+  fi
+  if fs.is_dir(handler_path); then
+    return error("handlers.ores must be a file: " + handler_path);
   fi
   val String source = fs.read_text(path);
   val String handlers = fs.read_text(handler_path);
@@ -240,9 +249,22 @@ fnc walk(String root, String dir, String url, String shape,
   if !fs.is_dir(dir); then return error("missing source directory: " + dir); fi
   val api = is_api(role);
   val String leaf_name = api ? "route.ores" : "page.ores";
+  val String wrong_leaf_name = api ? "page.ores" : "route.ores";
   let String result = "";
   val String leaf_path = dir + "/" + leaf_name;
+  val String wrong_leaf = dir + "/" + wrong_leaf_name;
+  // Reject incompatible source roles even when a valid route/page also exists.
+  // Otherwise a mixed tree is silently accepted and its other sources ignored.
+  if fs.is_symlink(wrong_leaf) | fs.exists(wrong_leaf); then
+    return error("source role mismatch: unexpected " + wrong_leaf_name + " in " + dir);
+  fi
+  if fs.is_symlink(leaf_path); then
+    return error("symlinked " + leaf_name + ": " + leaf_path);
+  fi
   val has_leaf = fs.exists(leaf_path);
+  if has_leaf, fs.is_dir(leaf_path); then
+    return error("source leaf must be a file: " + leaf_path);
+  fi
   if has_leaf; then
     val String manifest = api ? api_leaf(root, dir, url, kind, check, dry) :
       web_leaf(root, dir, url, kind, check, dry);
