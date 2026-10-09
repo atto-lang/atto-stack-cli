@@ -143,8 +143,8 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   val String source = fs.read_text(path);
   val String handlers = fs.read_text(handler_path);
   let String manifest = "";
-  let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\n";
-  let String lambda = generated_marker() + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\n";
+  let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\ndefine module rpc as\n";
+  let String lambda = generated_marker() + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\ndefine module lambda as\n";
   let String seen = "|";
   let count = 0;
   for const raw of source.split_literal("\n") {
@@ -178,6 +178,8 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
     count = count + 1;
   }
   if count == 0; then return error("no @ores-route declarations: " + path); fi
+  rpc = rpc + "end\n";
+  lambda = lambda + "end\n";
 
   if kind == "all" | kind == "rpc"; then
     val String status = sync_one(dir + "/rpc.ores", rpc, check, dry);
@@ -218,8 +220,8 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
     return error("page requires public String renderer: " + path);
   fi
   val String lambda = generated_marker() + "// Web Lambda adapter; server supplies request/response transport.\n" +
-    "import module page from \"./page\";\n\n" +
-    "pub fnc invoke_page(String request) -> String {\n  return page." + renderer + "(request);\n}\n";
+    "import module page from \"./page\";\n\ndefine module lambda as\n" +
+    "pub fnc invoke_page(String request) -> String {\n  return page." + renderer + "(request);\n}\nend\n";
   if kind == "all" | kind == "lambda"; then
     val String status = sync_one(dir + "/lambda.ores", lambda, check, dry);
     if is_error(status); then return status; fi
