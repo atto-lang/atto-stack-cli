@@ -33,6 +33,9 @@ jobs:
           set -euo pipefail
           bash -n bin/oreslang-stack
           bash tests/bootstrap-contract.sh
+      - name: Canonical native I/O suffixes (source-only gate)
+        shell: bash
+        run: bash tests/native-io-suffix-contract.sh
       - name: Assert no Rust CLI remains
         run: |
           test ! -e Cargo.toml
