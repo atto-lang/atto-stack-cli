@@ -376,6 +376,9 @@ def monitor(state, script, root, middleware, routes, fixture):
                 continue
             intended = (after, dead)
             if key not in pending or pending[key][0] != intended:
+                print("grandaddy: candidate", key, "reason", "worker-exit" if dead else "source-drift",
+                      "exit", workers[key][0].returncode, "pid", workers[key][0].pid,
+                      "from", before[:12], "to", after[:12], file=sys.stderr, flush=True)
                 # A new source digest gets a fresh admission budget even if
                 # the previous source repeatedly failed compilation.
                 if before != after and (key not in pending or pending[key][0][0] != after):
@@ -425,7 +428,9 @@ def monitor(state, script, root, middleware, routes, fixture):
                     last[key] = after
                 threading.Thread(target=lambda p:(time.sleep(.6), stop(p)),
                                  args=(old[0],), daemon=True).start()
-                print("grandaddy: reloaded", key, "old", old[0].pid, "new", new[0].pid, flush=True)
+                print("grandaddy: reloaded", key, "old", old[0].pid,
+                      "new", new[0].pid, "hash", after[:12],
+                      file=sys.stderr, flush=True)
                 pending.pop(key, None)
             except Exception as exc:
                 print("grandaddy: reload refused", key, exc, file=sys.stderr, flush=True)
