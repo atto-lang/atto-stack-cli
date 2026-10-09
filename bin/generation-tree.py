@@ -185,13 +185,21 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
     return proc, port
 
 def forwarded(port, handler, token, child_port=None):
-    size = int(handler.headers.get("Content-Length", "0"))
+    # Every request has exactly one unambiguous framing mode.
+    if handler.headers.get("Transfer-Encoding"):
+        return 400, {}, b"transfer-encoding not admitted"
+    lengths = handler.headers.get_all("Content-Length", [])
+    if len(lengths) > 1 or (lengths and (not lengths[0].isascii() or not lengths[0].isdecimal())):
+        return 400, {}, b"invalid content-length"
+    size = int(lengths[0]) if lengths else 0
     if not 0 <= size <= 256 * 1024:
         return 413, {}, b"request body too large"
     payload = handler.rfile.read(size) if size else b""
     headers = {k:v for k,v in handler.headers.items()
                if k.lower() not in ("host", "connection", "content-length",
-                                    "x-ores-dev-token", "x-ores-dev-target-port")}
+                                    "transfer-encoding", "te", "trailer",
+                                    "upgrade", "keep-alive", "proxy-connection")
+               and not k.lower().startswith("x-ores-dev-")}
     headers["X-Ores-Dev-Token"] = token
     if child_port is not None:
         headers["X-Ores-Dev-Target-Port"] = str(child_port)
@@ -211,6 +219,36 @@ def forwarded(port, handler, token, child_port=None):
 class HttpService(http.server.ThreadingHTTPServer):
     daemon_threads = True
     allow_reuse_address = True
+    request_queue_size = 64
+
+    def __init__(self, *args, **kwargs):
+        self._connections = threading.BoundedSemaphore(64)
+        super().__init__(*args, **kwargs)
+
+    def get_request(self):
+        conn, address = super().get_request()
+        conn.settimeout(5)
+        return conn, address
+
+    def process_request(self, request, client_address):
+        if not self._connections.acquire(blocking=False):
+            try:
+                request.sendall(b"HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n")
+            except OSError:
+                pass
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except Exception:
+            self._connections.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connections.release()
 
 class Worker(http.server.BaseHTTPRequestHandler):
     def log_message(self, *args): pass
@@ -229,6 +267,8 @@ class Worker(http.server.BaseHTTPRequestHandler):
         self.end_headers()
         if self.command != "HEAD": self.wfile.write(body)
     def dispatch(self):
+        if len(self.path) > 2048:
+            return self.send(414, {}, b"URI too long")
         state = self.server.state
         if state["mode"] != "grandaddy" and self.headers.get("X-Ores-Dev-Token") != state["token"]:
             return self.send(403, {}, b"worker authorization refused")
