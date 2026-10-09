@@ -365,6 +365,49 @@ fnc generate(String root, String role, String kind, bool check): String {
   return "";
 }
 
+// Create only a fresh stack project. An existing src/, generated/ or
+// project manifest is a collision, never permission to migrate/overwrite.
+fnc init_project(String root, String entry, String role): String {
+  if entry != "src/main.ores"; then
+    return error("init requires the default src/main.ores entrypoint");
+  fi
+  if role != "api" & role != "admin-api" & role != "web" & role != "admin-web"; then
+    return error("init expects --role api|admin-api|web|admin-web");
+  fi
+  val String manifest = root + "/oreslang-stack.toml";
+  val String source_root = root + "/src";
+  val String generated_root = root + "/generated";
+  if fs.exists(manifest) | fs.is_symlink(manifest) |
+    fs.exists(source_root) | fs.is_symlink(source_root) |
+    fs.exists(generated_root) | fs.is_symlink(generated_root); then
+    return error("init refuses existing manifest, src or generated paths");
+  fi
+
+  val bool api = is_api(role);
+  val String route_dir = source_root + (api ? "/routes" : "/pages");
+  fs.mkdir_all(route_dir);
+  fs.write_text_atomic(manifest, "[repository]\nrole = \"" + role + "\"\n");
+  fs.write_text_atomic(source_root + "/main.ores",
+    "pub routine main(): void {\n  stdio.println(\"hello from Oreslang stack\");\n  return;\n}\n");
+  if api; then
+    fs.write_text_atomic(route_dir + "/handlers.ores",
+      "define module handlers as\n  pub fnc greet(String request) -> String {\n    return request;\n  }\nend\n");
+    fs.write_text_atomic(route_dir + "/route.ores",
+      "// @ores-route GET / greet\nimport module handlers from \"./handlers\";\n\n" +
+      "define module route as\n  pub fnc greet(String request) -> String {\n" +
+      "    return handlers.greet(request);\n  }\nend\n");
+  else
+    fs.write_text_atomic(route_dir + "/page.ores",
+      "// @ores-page / render\ndefine module page as\n" +
+      "  pub fnc render(String request) -> String {\n" +
+      "    return \"<main>Hello from Oreslang</main>\";\n  }\nend\n");
+  fi
+
+  val String status = generate(root, role, "all", false);
+  if is_error(status); then return status; fi
+  return "ORESLANG_STACK_ACTION_v1:initialized";
+}
+
 fnc admission(String root, String entry, String action): String {
   val String role = repository_role(root);
   if is_error(role); then return role; fi
@@ -406,6 +449,11 @@ pub routine main(): void {
   val String entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
   val String backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
 
+  if command == "init"; then
+    val String role = env.get("ORESLANG_STACK_ROLE").unwrap();
+    stdio.println(init_project(root, entry, role));
+    return;
+  fi
   if command == "deploy"; then
     stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
     return;
