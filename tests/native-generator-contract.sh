@@ -176,4 +176,11 @@ if "$cli" init --root "$tmp/init-symlink" --role api; then
   exit 1
 fi
 
+mkdir -p "$tmp/init-llvm"
+if "$cli" init --root "$tmp/init-llvm" --role api --backend llvm; then
+  echo "native init must fail closed on LLVM" >&2
+  exit 1
+fi
+test ! -e "$tmp/init-llvm/src"
+
 echo "native Oreslang generator integration checks passed"
