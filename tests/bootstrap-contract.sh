@@ -12,6 +12,7 @@ cat > "$tmp/fake-oreslang" <<'EOS'
 set -euo pipefail
 if [[ "$1" == "--check" ]]; then
   [[ -f "$2" ]] || exit 1
+  [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
@@ -199,6 +200,29 @@ done
 mkdir -p "$tmp/role-mismatch"
 if MOCK_SPOOF_INIT=true "$repo/bin/oreslang-stack" init --role lambdas --root "$tmp/role-mismatch"; then
   echo "init role mismatch must fail" >&2
+  exit 1
+fi
+
+
+# Host role gate cannot depend on formatting of the TOML value.
+mkdir -p "$tmp/space-role"
+printf '[repository]\n  role= "infra"  \n' > "$tmp/space-role/oreslang-stack.toml"
+mkdir -p "$tmp/space-role/src"
+printf 'pub routine main(): void { return; }\n' > "$tmp/space-role/src/main.ores"
+if MOCK_GUEST_INVOCATION_FILE="$tmp/spaces-guest" \
+    "$repo/bin/oreslang-stack" build --root "$tmp/space-role"; then
+  echo "candidate-only role must fail regardless of harmless TOML whitespace" >&2
+  exit 1
+fi
+test ! -e "$tmp/spaces-guest"
+
+# Generation success must not bypass actual compiler verification.
+mkdir -p "$tmp/generate-compiler"
+printf '[repository]\nrole = "api"\n' > "$tmp/generate-compiler/oreslang-stack.toml"
+mkdir -p "$tmp/generate-compiler/src"
+printf 'pub routine main(): void { return; }\n' > "$tmp/generate-compiler/src/main.ores"
+if MOCK_COMPILER_REJECT=true "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/generate-compiler"; then
+  echo "generation must fail when compiler check rejects source" >&2
   exit 1
 fi
 
