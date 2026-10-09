@@ -109,6 +109,15 @@ protocol. The HTTP host is still local developer tooling.
 Worker teardown targets its entire owned POSIX process group, even if
 the leader exited while a compiler or actor descendant remains.
 
+## Worker credential handoff
+
+Internal HTTP health credentials and source-derived markers now travel only
+through a constrained worker environment, not the worker command line.
+This reduces accidental disclosure through process listings; same-user
+environment inspection remains a local trust limitation. Configuration
+source paths reject empty, dot, parent, repeated-separator and absolute
+components before canonicalization.
+
 ## Audit boundaries and parity gaps
 
 This is a developer-local, explicitly opted-in process supervisor.
