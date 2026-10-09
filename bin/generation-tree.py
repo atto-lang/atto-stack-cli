@@ -53,6 +53,21 @@ def safe_relative(root, rel, directory=False):
         fail("source directory missing: " + rel)
     return current
 
+def digest_regular_file(path):
+    # lstat() followed by read_bytes() is susceptible to a leaf symlink
+    # replacement. Open the final component without following links and
+    # enforce size/type bounds on the opened descriptor, not path metadata.
+    options = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_NONBLOCK", 0)
+    fd = os.open(path, options)
+    with os.fdopen(fd, "rb") as stream:
+        info = os.fstat(stream.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_size > MAX_BYTES:
+            fail("watched source must be a bounded regular file")
+        data = stream.read(MAX_BYTES + 1)
+        if len(data) > MAX_BYTES or len(data) != info.st_size:
+            fail("watched source changed size while scanning")
+        return hashlib.sha256(data).hexdigest()
+
 def digest_tree(root, rel, recursive=True):
     base = safe_relative(root, rel, True)
     entries = []
@@ -68,9 +83,11 @@ def digest_tree(root, rel, recursive=True):
             if not stat.S_ISREG(p.lstat().st_mode):
                 fail("non-regular source file")
             count += 1
-            if count > MAX_FILES or p.stat().st_size > MAX_BYTES:
-                fail("watched source exceeds limits")
-            entries.append((p.relative_to(base).as_posix(), hashlib.sha256(p.read_bytes()).hexdigest()))
+            if count > MAX_FILES:
+                fail("watched source exceeds file-count limit")
+            # Revalidate each path component before opening the leaf.
+            safe_relative(root, p.relative_to(root).as_posix())
+            entries.append((p.relative_to(base).as_posix(), digest_regular_file(p)))
         dirs.sort()
     return hashlib.sha256(json.dumps(sorted(entries)).encode()).hexdigest()
 
