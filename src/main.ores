@@ -28,10 +28,10 @@ fnc admit_project(String root, String entry, String action): void {
 }
 
 pub routine main(): void {
-  val command = env.get("ORESLANG_STACK_COMMAND");
-  val root = env.get("ORESLANG_STACK_ROOT");
-  val entry = env.get("ORESLANG_STACK_ENTRY");
-  val backend = env.get("ORESLANG_STACK_BACKEND");
+  val command = env.get("ORESLANG_STACK_COMMAND").unwrap();
+  val root = env.get("ORESLANG_STACK_ROOT").unwrap();
+  val entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
+  val backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
 
   if command == "dev"; then
     if backend != "graal"; then
