@@ -1,0 +1,24 @@
+name: Generation tree HTTP isolation (Rust + Oreslang)
+
+on:
+  push:
+    branches: [main, 'feat/**']
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  generation-tree:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Python source and real HTTP three-generation lifecycle
+        run: |
+          python3 -m py_compile bin/generation-tree.py tests/test_generation_tree.py
+          python3 -m unittest discover -s tests -p test_generation_tree.py -v
+      - name: Oreslang bootstrap shell parse
+        run: bash -n bin/oreslang-stack
