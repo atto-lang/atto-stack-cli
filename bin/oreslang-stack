@@ -58,7 +58,9 @@ if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
   echo "oreslang-stack: flags2env command does not match requested command" >&2
   exit 2
 fi
-if [[ "${ORESLANG_STACK_POSITIONALS:-[]}" != "[]" ]]; then
+# flags2env shell-env includes the synthetic argv[0] label in the
+# positionals channel. Reject anything beyond that one exact entry.
+if [[ "${ORESLANG_STACK_POSITIONALS:-}" != '["oreslang-stack"]' ]]; then
   echo "oreslang-stack: unrecognized positional arguments" >&2
   exit 2
 fi
