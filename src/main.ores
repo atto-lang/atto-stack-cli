@@ -43,15 +43,17 @@ fnc repository_role(String root): String {
   val lines = fs.read_text(path).split_literal("\n");
   let String section = "";
   let String role = "";
+  let bool seen_repository = false;
   for const raw of lines {
     val String line = raw.trim();
     if line == "" | line.starts_with("#"); then
       continue;
     fi
     if line.starts_with("["); then
-      if line != "[repository]"; then
-        return error("unsupported oreslang-stack.toml section");
+      if line != "[repository]" | seen_repository; then
+        return error("unsupported or duplicate oreslang-stack.toml section");
       fi
+      seen_repository = true;
       section = "repository";
     else
       val parts = line.split_literal("=");
@@ -461,6 +463,15 @@ fnc admission(String root, String entry, String action): String {
       val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
       if fs.read_text(candidate) != expected; then
         return error("candidate manifest drift or deployable policy changed");
+      fi
+      val String sibling = role == "infra" ?
+        root + "/.oreslang-stack-lambdas.candidate.toml" :
+        root + "/.oreslang-stack-infra.candidate.toml";
+      if fs.exists(sibling) | fs.is_symlink(sibling); then
+        return error("mixed infra/lambda candidate manifests denied");
+      fi
+      if fs.exists(root + "/generated") | fs.is_symlink(root + "/generated"); then
+        return error("infra/lambdas may not claim generated adapters");
       fi
       if fs.exists(root + "/src/routes") | fs.exists(root + "/src/pages"); then
         return error("infra/lambdas cannot silently contain API/web routes");
