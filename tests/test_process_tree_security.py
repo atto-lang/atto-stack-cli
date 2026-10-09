@@ -39,5 +39,38 @@ class ProcessGroupTeardown(unittest.TestCase):
             time.sleep(1.4)
             self.assertFalse(marker.exists(), "orphaned worker survived exited parent")
 
+    def test_shutdown_reaps_retired_worker_even_before_drain_deadline(self):
+        import threading
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                   start_new_session=True, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state = {"stop": threading.Event(), "lock": threading.Lock(),
+                 "daddy": None, "children": {}, "retired": [process]}
+        try:
+            TREE.cleanup_workers(state, [])
+            self.assertIsNotNone(process.poll())
+            self.assertTrue(state["stop"].is_set())
+        finally:
+            TREE.stop(process)
+
+    def test_retirement_drain_is_interrupted_by_shutdown(self):
+        import threading
+        process = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                   start_new_session=True, stdin=subprocess.DEVNULL,
+                                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        state = {"stop": threading.Event(), "lock": threading.Lock(),
+                 "retired": [process]}
+        watcher = threading.Thread(target=TREE.retire_worker,
+                                   args=(state, process), daemon=True)
+        try:
+            watcher.start()
+            state["stop"].set()
+            watcher.join(timeout=3)
+            self.assertFalse(watcher.is_alive(), "retirement ignored grandaddy shutdown")
+            self.assertIsNotNone(process.poll(), "retired worker still alive")
+            self.assertFalse(state["retired"], "retired process was not untracked")
+        finally:
+            TREE.stop(process)
+
 if __name__=="__main__":
     unittest.main()
