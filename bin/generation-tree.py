@@ -17,6 +17,7 @@ import socket
 import stat
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -162,14 +163,18 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
             cmd.append(arg)
     env = {**os.environ, "ORES_DEV_PORT": str(port), "ORES_DEV_HEALTH_TOKEN": token,
            "ORES_DEV_ROOT": str(root)}
-    proc = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.DEVNULL,
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                            start_new_session=(os.name == "posix"))
-    try:
-        await_ready(port, proc, token)
-    except Exception:
-        stop(proc)
-        raise
+    with tempfile.TemporaryFile(mode="w+t",encoding="utf-8") as worker_log:
+        proc = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.DEVNULL,
+                                stdout=subprocess.DEVNULL, stderr=worker_log,
+                                start_new_session=(os.name == "posix"))
+        try:
+            await_ready(port, proc, token)
+        except Exception as failure:
+            stop(proc)
+            worker_log.seek(0)
+            detail = worker_log.read()[-1600:]
+            raise ValueError("worker readiness denied: " + str(failure) +
+                             ("; worker: " + detail if detail else "")) from failure
     return proc, port
 
 def forwarded(port, handler, token, child_port=None):
