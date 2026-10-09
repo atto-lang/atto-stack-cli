@@ -10,7 +10,7 @@ Bash source generator.
 
 - `ORESLANG_STACK_ACTION_v1:dev`: run the Oreslang entrypoint.
 - `ORESLANG_STACK_ACTION_v1:build`: compiler-check all `.ores` files and
-  package source bundle. This is not a native binary.
+  package a runtime-dependent executable source bundle (`bin/oreslang-stack-run`). This is not a native binary.
 - `ORESLANG_STACK_ACTION_v1:generated`: successful native generation.
 - `ORESLANG_STACK_ACTION_v1:check`: successful drift verification, followed
   by host-invoked Oreslang compiler type checks.
