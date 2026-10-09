@@ -183,4 +183,45 @@ if "$cli" init --root "$tmp/init-llvm" --role api --backend llvm; then
 fi
 test ! -e "$tmp/init-llvm/src"
 
+# Infra and Lambdas: source-only candidates, never deployment permissions.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  mkdir -p "$root"
+  "$cli" init --root "$root" --role "$role"
+  "$cli" check --root "$root" | grep -F 'verified'
+  test ! -e "$root/generated/route-manifest.json"
+  test ! -e "$root/src/routes"
+  test ! -e "$root/src/pages"
+  if [[ "$role" == infra ]]; then
+    test -f "$root/src/infra/config.ores"
+  else
+    test -f "$root/src/functions/hello/handler.ores"
+  fi
+  for op in routes generate dev build deploy; do
+    if [[ "$op" == generate ]]; then
+      if "$cli" generate --kind all --root "$root"; then
+        echo "$role must refuse generated route adapters" >&2
+        exit 1
+      fi
+    else
+      if "$cli" "$op" --root "$root"; then
+        echo "$role must refuse $op until adapter certification" >&2
+        exit 1
+      fi
+    fi
+  done
+  candidate="$root/.oreslang-stack-$role.candidate.toml"
+  sed -i.bak 's/deployable = false/deployable = true/' "$candidate"
+  if "$cli" check --root "$root"; then
+    echo "$role candidate policy drift must block checks" >&2
+    exit 1
+  fi
+  mv "$candidate.bak" "$candidate"
+  "$cli" check --root "$root" >/dev/null
+  if "$cli" init --root "$root" --role "$role"; then
+    echo "$role init may not overwrite" >&2
+    exit 1
+  fi
+done
+
 echo "native Oreslang generator integration checks passed"
