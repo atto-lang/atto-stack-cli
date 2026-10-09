@@ -95,7 +95,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
     if path.ends_with(".ores"), !previous.starts_with(GENERATED); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
-    if path.ends_with(".json"), !previous.starts_with("{\\n  \\"schema\\": \\"oreslang.stack.inventory/v1\\""); then
+    if path.ends_with(".json"), !previous.starts_with("{\n  \"schema\": \"oreslang.stack.inventory/v1\""); then
       return error("refusing to overwrite unowned route manifest: " + path);
     fi
     if check, previous != generated; then
