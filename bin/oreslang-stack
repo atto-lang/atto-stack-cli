@@ -77,6 +77,10 @@ export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
 export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
+if [[ "$requested_command" == "init" && "${ORESLANG_STACK_BACKEND:-graal}" != "graal" ]]; then
+  echo "oreslang-stack: init requires the supported graal backend" >&2
+  exit 2
+fi
 export ORESLANG_STACK_ROLE="${ORESLANG_STACK_ROLE:-}"
 if [[ "$requested_command" == "init" ]]; then
   case "$ORESLANG_STACK_ROLE" in
