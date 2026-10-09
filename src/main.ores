@@ -34,13 +34,13 @@ fnc quote_json(String raw): String {
 
 fnc repository_role(String root): String {
   val String path = root + "/oreslang-stack.toml";
-  if fs.is_symlink(path); then
+  if fs.is_symlink_blocking(path); then
     return error("project manifest is a symlink");
   fi
-  if !fs.exists(path); then
+  if !fs.exists_blocking(path); then
     return error("missing oreslang-stack.toml");
   fi
-  val lines = fs.read_text(path).split_literal("\n");
+  val lines = fs.read_text_blocking(path).split_literal("\n");
   let String section = "";
   let String role = "";
   let bool seen_repository = false;
@@ -99,11 +99,11 @@ fnc route_shape(String shape, String segment): String {
 // Return "" on success, ERROR on refusal. The native guest owns all writes.
 // Dry pass checks ownership and signatures before any output mutation.
 fnc sync_one(String path, String generated, bool check, bool dry): String {
-  if fs.is_symlink(path); then
+  if fs.is_symlink_blocking(path); then
     return error("symlinked output: " + path);
   fi
-  if fs.exists(path); then
-    val String previous = fs.read_text(path);
+  if fs.exists_blocking(path); then
+    val String previous = fs.read_text_blocking(path);
     if path.ends_with(".ores") | path.ends_with(".graphql"), !previous.starts_with(generated_marker()); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
@@ -120,7 +120,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
     if check; then return error("missing generated output: " + path); fi
   fi
   if !dry, !check; then
-    fs.write_text_atomic(path, generated);
+    fs.write_text_atomic_blocking(path, generated);
   fi
   return "";
 }
@@ -138,14 +138,14 @@ fnc http_method(String method): bool {
 fnc api_leaf(String root, String dir, String url, String kind, bool check, bool dry): String {
   val String path = dir + "/route.ores";
   val String handler_path = dir + "/handlers.ores";
-  if fs.is_symlink(path) | fs.is_symlink(handler_path); then
+  if fs.is_symlink_blocking(path) | fs.is_symlink_blocking(handler_path); then
     return error("symlinked route source or handlers: " + dir);
   fi
-  if !fs.exists(handler_path); then
+  if !fs.exists_blocking(handler_path); then
     return error("route.ores requires sibling handlers.ores: " + dir);
   fi
-  val String source = fs.read_text(path);
-  val String handlers = fs.read_text(handler_path);
+  val String source = fs.read_text_blocking(path);
+  val String handlers = fs.read_text_blocking(handler_path);
   let String manifest = "";
   let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\ndefine module rpc as\n";
   let String lambda = generated_marker() + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\ndefine module lambda as\n";
@@ -234,8 +234,8 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
     return error("web pages do not produce RPC or GraphQL operations");
   fi
   val String path = dir + "/page.ores";
-  if fs.is_symlink(path); then return error("symlinked page source: " + path); fi
-  val String source = fs.read_text(path);
+  if fs.is_symlink_blocking(path); then return error("symlinked page source: " + path); fi
+  val String source = fs.read_text_blocking(path);
   let String renderer = "";
   for const raw of source.split_literal("\n") {
     val String line = raw.trim();
@@ -267,13 +267,13 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
 fnc walk(String root, String dir, String url, String shape,
          String role, String kind, bool check, bool dry, int depth): String {
   if depth > 32; then return error("route nesting exceeds 32: " + dir); fi
-  if fs.is_symlink(dir); then return error("symlinked route directory: " + dir); fi
-  if !fs.is_dir(dir); then return error("missing source directory: " + dir); fi
+  if fs.is_symlink_blocking(dir); then return error("symlinked route directory: " + dir); fi
+  if !fs.is_dir_blocking(dir); then return error("missing source directory: " + dir); fi
   val api = is_api(role);
   val String leaf_name = api ? "route.ores" : "page.ores";
   let String result = "";
   val String leaf_path = dir + "/" + leaf_name;
-  val has_leaf = fs.exists(leaf_path);
+  val has_leaf = fs.exists_blocking(leaf_path);
   if has_leaf; then
     val String manifest = api ? api_leaf(root, dir, url, kind, check, dry) :
       web_leaf(root, dir, url, kind, check, dry);
@@ -281,13 +281,13 @@ fnc walk(String root, String dir, String url, String shape,
     result = "@S|" + shape + "|\n" + manifest;
   fi
 
-  for const raw_name of fs.list_dir(dir) {
+  for const raw_name of fs.list_dir_blocking(dir) {
     val String name = raw_name;
     val String child = dir + "/" + name;
-    if fs.is_symlink(child); then
+    if fs.is_symlink_blocking(child); then
       return error("symlink in route tree: " + child);
     fi
-    if fs.is_dir(child); then
+    if fs.is_dir_blocking(child); then
       val String next_url = route_path(url, name);
       if is_error(next_url); then return next_url; fi
       val String next_shape = route_shape(shape, name);
@@ -314,12 +314,12 @@ fnc walk(String root, String dir, String url, String shape,
           fi
         fi
         if targeted, !valid; then
-          val String old = fs.read_text(child);
+          val String old = fs.read_text_blocking(child);
           if !old.starts_with(generated_marker()); then
             return error("unowned adapter in route tree: " + child);
           fi
           if check; then return error("orphan generated adapter: " + child); fi
-          if !dry; then fs.remove(child); fi
+          if !dry; then fs.remove_blocking(child); fi
         fi
       fi
     fi
@@ -375,11 +375,11 @@ fnc generate(String root, String role, String kind, bool check): String {
   // In particular, a hand-authored manifest cannot cause partial generation.
   if kind == "all"; then
     val String parent = root + "/generated";
-    if fs.is_symlink(parent); then return error("generated manifest parent is symlink"); fi
-    if fs.exists(parent), !fs.is_dir(parent); then
+    if fs.is_symlink_blocking(parent); then return error("generated manifest parent is symlink"); fi
+    if fs.exists_blocking(parent), !fs.is_dir_blocking(parent); then
       return error("generated manifest parent is not a directory");
     fi
-    if fs.exists(parent); then
+    if fs.exists_blocking(parent); then
       val String existing = sync_one(parent + "/route-manifest.json", inspected, check, true);
       if is_error(existing); then return existing; fi
     else
@@ -392,7 +392,7 @@ fnc generate(String root, String role, String kind, bool check): String {
   if is_error(manifest); then return manifest; fi
   if kind == "all"; then
     val String parent = root + "/generated";
-    if !fs.exists(parent); then fs.mkdir_all(parent); fi
+    if !fs.exists_blocking(parent); then fs.mkdir_all_blocking(parent); fi
     val String state = sync_one(parent + "/route-manifest.json", manifest, check, false);
     if is_error(state); then return state; fi
   fi
@@ -414,57 +414,57 @@ fnc init_project(String root, String entry, String role): String {
   val String generated_root = root + "/generated";
   val String infra_candidate = root + "/.oreslang-stack-infra.candidate.toml";
   val String lambda_candidate = root + "/.oreslang-stack-lambdas.candidate.toml";
-  if fs.exists(infra_candidate) | fs.is_symlink(infra_candidate) |
-    fs.exists(lambda_candidate) | fs.is_symlink(lambda_candidate); then
+  if fs.exists_blocking(infra_candidate) | fs.is_symlink_blocking(infra_candidate) |
+    fs.exists_blocking(lambda_candidate) | fs.is_symlink_blocking(lambda_candidate); then
     return error("init refuses existing stack candidate manifest");
   fi
-  if fs.exists(manifest) | fs.is_symlink(manifest) |
-    fs.exists(source_root) | fs.is_symlink(source_root) |
-    fs.exists(generated_root) | fs.is_symlink(generated_root); then
+  if fs.exists_blocking(manifest) | fs.is_symlink_blocking(manifest) |
+    fs.exists_blocking(source_root) | fs.is_symlink_blocking(source_root) |
+    fs.exists_blocking(generated_root) | fs.is_symlink_blocking(generated_root); then
     return error("init refuses existing manifest, src or generated paths");
   fi
 
   val bool api = is_api(role);
   val String route_dir = source_root + (api ? "/routes" : "/pages");
   if role == "infra"; then
-    fs.mkdir_all(source_root + "/infra");
+    fs.mkdir_all_blocking(source_root + "/infra");
   else
     if role == "lambdas"; then
-      fs.mkdir_all(source_root + "/functions/hello");
+      fs.mkdir_all_blocking(source_root + "/functions/hello");
     else
-      fs.mkdir_all(route_dir);
+      fs.mkdir_all_blocking(route_dir);
     fi
   fi
-  fs.write_text_atomic(manifest, "[repository]\nrole = \"" + role + "\"\n");
-  fs.write_text_atomic(source_root + "/main.ores",
-    "pub routine main(): void {\n  stdio.println(\"hello from Oreslang stack\");\n  return;\n}\n");
+  fs.write_text_atomic_blocking(manifest, "[repository]\nrole = \"" + role + "\"\n");
+  fs.write_text_atomic_blocking(source_root + "/main.ores",
+    "pub routine main(): void {\n  stdio.println_blocking(\"hello from Oreslang stack\");\n  return;\n}\n");
   if role == "infra"; then
     // Candidate-only: this is not Terraform/Crossplane provisioning.
-    fs.write_text_atomic(infra_candidate,
+    fs.write_text_atomic_blocking(infra_candidate,
       "[candidate]\nrole = \"infra\"\ndeployable = false\n");
-    fs.write_text_atomic(source_root + "/infra/config.ores",
+    fs.write_text_atomic_blocking(source_root + "/infra/config.ores",
       "define module infra_candidate as\n" +
       "  pub fnc status(): String { return \"not-deployable\"; }\nend\n");
     return "ORESLANG_STACK_ACTION_v1:initialized";
   fi
   if role == "lambdas"; then
     // No provider runtime, compiled bootstrap or zip artifact is implied.
-    fs.write_text_atomic(lambda_candidate,
+    fs.write_text_atomic_blocking(lambda_candidate,
       "[candidate]\nrole = \"lambdas\"\ndeployable = false\n");
-    fs.write_text_atomic(source_root + "/functions/hello/handler.ores",
+    fs.write_text_atomic_blocking(source_root + "/functions/hello/handler.ores",
       "define module handler as\n" +
       "  pub fnc invoke(String event): String { return event; }\nend\n");
     return "ORESLANG_STACK_ACTION_v1:initialized";
   fi
   if api; then
-    fs.write_text_atomic(route_dir + "/handlers.ores",
+    fs.write_text_atomic_blocking(route_dir + "/handlers.ores",
       "define module handlers as\n  pub fnc greet(String request) -> String {\n    return request;\n  }\nend\n");
-    fs.write_text_atomic(route_dir + "/route.ores",
+    fs.write_text_atomic_blocking(route_dir + "/route.ores",
       "// @ores-route GET / greet\nimport module handlers from \"./handlers\";\n\n" +
       "define module route as\n  pub fnc greet(String request) -> String {\n" +
       "    return handlers.greet(request);\n  }\nend\n");
   else
-    fs.write_text_atomic(route_dir + "/page.ores",
+    fs.write_text_atomic_blocking(route_dir + "/page.ores",
       "// @ores-page / render\ndefine module page as\n" +
       "  pub fnc render(String request) -> String {\n" +
       "    return \"<main>Hello from Oreslang</main>\";\n  }\nend\n");
@@ -479,7 +479,7 @@ fnc admission(String root, String entry, String action): String {
   val String role = repository_role(root);
   if is_error(role); then return role; fi
   val String entry_path = root + "/" + entry;
-  if fs.is_symlink(entry_path) | !fs.exists(entry_path); then
+  if fs.is_symlink_blocking(entry_path) | !fs.exists_blocking(entry_path); then
     return error("missing or symlinked Oreslang application entrypoint");
   fi
   if role == "infra" | role == "lambdas"; then
@@ -487,29 +487,29 @@ fnc admission(String root, String entry, String action): String {
       val String candidate = role == "infra" ?
         root + "/.oreslang-stack-infra.candidate.toml" :
         root + "/.oreslang-stack-lambdas.candidate.toml";
-      if fs.is_symlink(candidate) | !fs.exists(candidate); then
+      if fs.is_symlink_blocking(candidate) | !fs.exists_blocking(candidate); then
         return error("missing or symlinked non-deployable candidate manifest");
       fi
       val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
-      if fs.read_text(candidate) != expected; then
+      if fs.read_text_blocking(candidate) != expected; then
         return error("candidate manifest drift or deployable policy changed");
       fi
       val String sibling = role == "infra" ?
         root + "/.oreslang-stack-lambdas.candidate.toml" :
         root + "/.oreslang-stack-infra.candidate.toml";
-      if fs.exists(sibling) | fs.is_symlink(sibling); then
+      if fs.exists_blocking(sibling) | fs.is_symlink_blocking(sibling); then
         return error("mixed infra/lambda candidate manifests denied");
       fi
-      if fs.exists(root + "/generated") | fs.is_symlink(root + "/generated"); then
+      if fs.exists_blocking(root + "/generated") | fs.is_symlink_blocking(root + "/generated"); then
         return error("infra/lambdas may not claim generated adapters");
       fi
-      if fs.exists(root + "/src/routes") | fs.exists(root + "/src/pages"); then
+      if fs.exists_blocking(root + "/src/routes") | fs.exists_blocking(root + "/src/pages"); then
         return error("infra/lambdas cannot silently contain API/web routes");
       fi
       val String marker = role == "infra" ?
         root + "/src/infra/config.ores" :
         root + "/src/functions/hello/handler.ores";
-      if fs.is_symlink(marker) | !fs.exists(marker); then
+      if fs.is_symlink_blocking(marker) | !fs.exists_blocking(marker); then
         return error("missing or symlinked candidate Oreslang source");
       fi
       return "ORESLANG_STACK_ACTION_v1:check";
@@ -551,23 +551,23 @@ pub routine main(): void {
   val String backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
 
   if command == "deploy"; then
-    stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
+    stdio.println_blocking(error("deploy denied: host adapter and runtime receipt are not certified"));
     return;
   fi
   if backend != "graal"; then
-    stdio.println(error("LLVM backend is not ready for this CLI"));
+    stdio.println_blocking(error("LLVM backend is not ready for this CLI"));
     return;
   fi
   if command == "init"; then
     val String role = env.get("ORESLANG_STACK_ROLE").unwrap();
-    stdio.println(init_project(root, entry, role));
+    stdio.println_blocking(init_project(root, entry, role));
     return;
   fi
   val String result = admission(root, entry, command);
   if command == "routes", !is_error(result); then
-    stdio.println("ORESLANG_STACK_JSON_v1:" + result);
+    stdio.println_blocking("ORESLANG_STACK_JSON_v1:" + result);
   else
-    stdio.println(result);
+    stdio.println_blocking(result);
   fi
   return;
 }
