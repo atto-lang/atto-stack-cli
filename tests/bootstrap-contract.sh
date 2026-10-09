@@ -91,4 +91,50 @@ if "$repo/bin/oreslang-stack" dev --root "$tmp/project-link"; then
   echo "symlink root must fail" >&2
   exit 1
 fi
+# Sensitive local compiler config may be useful when building, but it must
+# not leak into the exported source-only distribution by default.
+printf '[local]\ntoken = "do-not-bundle-this"\n' > "$tmp/project/.oreslangc.cfg.toml"
+"$repo/bin/oreslang-stack" build --root "$tmp/project" >/dev/null
+if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslangc.cfg.toml'; then
+  echo "source distribution must omit private compiler configuration" >&2
+  exit 1
+fi
+
+# The unpacked runner must refuse entrypoint parents redirected via symlinks,
+# even if the final entry itself is a regular source file.
+mkdir -p "$tmp/unpacked" "$tmp/outside-source"
+printf 'pub routine main(): void { return; }\n' > "$tmp/outside-source/main.ores"
+tar -xzf "$tmp/project/dist/oreslang-stack-source.tar.gz" -C "$tmp/unpacked"
+ln -s "$tmp/outside-source" "$tmp/unpacked/src/escaped"
+printf 'src/escaped/main.ores\n' > "$tmp/unpacked/.oreslang-stack-entry"
+if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; then
+  echo "bundle entrypoint must not escape via parent symlink" >&2
+  exit 1
+fi
+rm "$tmp/unpacked/src/escaped"
+printf 'src/../src/main.ores\n' > "$tmp/unpacked/.oreslang-stack-entry"
+if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; then
+  echo "bundle traversal segments must be denied" >&2
+  exit 1
+fi
+printf 'src/./main.ores\n' > "$tmp/unpacked/.oreslang-stack-entry"
+if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; then
+  echo "bundle dot segments must be denied" >&2
+  exit 1
+fi
+printf 'src//main.ores\n' > "$tmp/unpacked/.oreslang-stack-entry"
+if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; then
+  echo "bundle duplicate separators must be denied" >&2
+  exit 1
+fi
+printf 'src/main.ores\n' > "$tmp/unpacked/.oreslang-stack-entry"
+test "$(ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run")" = 'app started'
+
+# A linked application entry must be rejected even if it resolves to a file.
+mkdir -p "$tmp/project/src/linked"
+ln -s "$tmp/outside-source/main.ores" "$tmp/project/src/linked/entry.ores"
+if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/linked/entry.ores; then
+  echo "symlinked application entry must fail" >&2
+  exit 1
+fi
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
