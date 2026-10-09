@@ -81,12 +81,12 @@ entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 
 # A project entrypoint must stay relative to its selected root.
 case "$entry" in
-  ""|/*|..|../*|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+  ""|/*|..|../*|src/|*//*|*/./*|*/.|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
 esac
-# Bundled builds must include their entrypoint; restrict it to src/.
+# The source bundle contains checked .ores files under src/ only.
 case "$entry" in
-  src/*) ;;
-  *) echo "oreslang-stack: entrypoint must be below src/" >&2; exit 2 ;;
+  src/*.ores) ;;
+  *) echo "oreslang-stack: entrypoint must be an .ores file below src/" >&2; exit 2 ;;
 esac
 if [[ ! -d "$root" || -L "$root" ]]; then
   echo "oreslang-stack: root must be an existing non-symlink directory" >&2
