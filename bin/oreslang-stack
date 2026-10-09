@@ -154,6 +154,17 @@ case "$requested_command" in
       admission_permissions+=("--allow-write=$root/src,$root/generated")
     fi ;;
 esac
+# Independent host deny gate: a guest receipt must never widen candidate roles.
+if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != init ]]; then
+  if grep -Fxq 'role = "infra"' "$root/oreslang-stack.toml" ||
+     grep -Fxq 'role = "lambdas"' "$root/oreslang-stack.toml"; then
+    case "$requested_command" in
+      check|deploy) ;;
+      *) echo "oreslang-stack: infra/lambdas are candidate-only; command refused" >&2; exit 2 ;;
+    esac
+  fi
+fi
+
 if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
@@ -234,17 +245,6 @@ verify_initialized_project() {
     *) return 1 ;;
   esac
 }
-
-# Independent host deny gate: a guest receipt must never widen candidate roles.
-if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != init ]]; then
-  if grep -Fxq 'role = "infra"' "$root/oreslang-stack.toml" ||
-     grep -Fxq 'role = "lambdas"' "$root/oreslang-stack.toml"; then
-    case "$requested_command" in
-      check|deploy) ;;
-      *) echo "oreslang-stack: infra/lambdas are candidate-only; command refused" >&2; exit 2 ;;
-    esac
-  fi
-fi
 
 case "$action" in
   ORESLANG_STACK_ACTION_v1:initialized)
