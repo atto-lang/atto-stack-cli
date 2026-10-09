@@ -22,6 +22,9 @@ test ! -e "$tmp/manifest-collision/src/routes/lambda.ores"
 "$cli" routes --root "$tmp/api" | grep -F '"kind":"route"'
 grep -F 'route.greet(request)' "$tmp/api/src/routes/rpc.ores"
 grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/lambda.ores"
+grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/graphql.ores"
+grep -F 'type Query' "$tmp/api/src/routes/graphql.graphql"
+"$cli" generate --kind graphql --check --root "$tmp/api"
 grep -F 'oreslang.stack.inventory/v1' "$tmp/api/generated/route-manifest.json"
 "$cli" build --root "$tmp/api"
 test -s "$tmp/api/dist/oreslang-stack-source.tar.gz"
@@ -135,6 +138,8 @@ for role in api admin-api web admin-web; do
     test -f "$root/src/routes/handlers.ores"
     test -f "$root/src/routes/rpc.ores"
     test -f "$root/src/routes/lambda.ores"
+    test -f "$root/src/routes/graphql.ores"
+    test -f "$root/src/routes/graphql.graphql"
   else
     test -f "$root/src/pages/page.ores"
     test -f "$root/src/pages/lambda.ores"
