@@ -21,10 +21,16 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
 Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
+       oreslang-stack routes [--root DIR]
+       oreslang-stack generate [--kind all|rpc|lambda] [--check] [--root DIR]
+       oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
 dev: run an Oreslang project once (watch/reload is not implemented).
-build: compiler check + Oreslang source bundle; NOT an executable/native build.
+build: Oreslang native generators + compiler checks + source-only bundle.
+routes: emit manifest from Oreslang-native route discovery.
+generate: Oreslang-native RPC/Lambda source generation and drift detection.
+check: validate all generated outputs and check every .ores file with the compiler.
 deploy: always denied until a certified host adapter exists.
 EOF
   exit 0
@@ -66,16 +72,50 @@ esac
 # Read-only and env permissions are explicitly scoped. No --allow-all.
 # The .ores program emits exactly one validated action; any other output
 # is a failure, even if the host interpreter exits successfully.
-if ! action="$("$oreslang_bin" --allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND --allow-read="$root" "$cli_home/src/main.ores")"; then
+if ! action="$("$oreslang_bin" --allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK --allow-read="$root" --allow-write="$root" "$cli_home/src/main.ores")"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
+# Compile all Oreslang units, not merely the application entrypoint.
+# This is an Oreslang compiler invocation, not a substitute source parser.
+compiler_check_all() {
+  local file
+  local checked=0
+  while IFS= read -r -d '' file; do
+    if ! "$oreslang_bin" --check "$file"; then
+      echo "oreslang-stack: compiler rejected $file" >&2
+      return 1
+    fi
+    checked=$((checked + 1))
+  done < <(find "$root/src" -type f -name '*.ores' -print0 | LC_ALL=C sort -z)
+  if (( checked == 0 )); then
+    echo "oreslang-stack: no .ores source files to check" >&2
+    return 1
+  fi
+}
+
 case "$action" in
+  ORESLANG_STACK_JSON_v1:*)
+    if [[ "${ORESLANG_STACK_COMMAND:-}" != "routes" ]]; then
+      echo "oreslang-stack: unexpected JSON receipt" >&2
+      exit 1
+    fi
+    printf '%s\n' "${action#ORESLANG_STACK_JSON_v1:}"
+    ;;
+  ORESLANG_STACK_ACTION_v1:generated)
+    [[ "${ORESLANG_STACK_COMMAND:-}" == "generate" ]] || exit 1
+    printf '%s\n' "generated Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
+    ;;
+  ORESLANG_STACK_ACTION_v1:check)
+    [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
+    compiler_check_all
+    printf '%s\n' "all generated adapters and Oreslang sources verified"
+    ;;
   ORESLANG_STACK_ACTION_v1:dev)
     exec "$oreslang_bin" --allow-read="$root" "$root/$entry"
     ;;
   ORESLANG_STACK_ACTION_v1:build)
-    if ! "$oreslang_bin" --check "$root/$entry"; then
+    if ! compiler_check_all; then
       echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
       exit 1
     fi
