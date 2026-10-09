@@ -2,7 +2,7 @@ name: Oreslang-native CLI bootstrap contracts
 
 on:
   push:
-    branches: [main, 'feat/**']
+    branches: [main]
   pull_request:
 
 permissions:
@@ -18,7 +18,11 @@ jobs:
       - name: Build canonical flags-2-env parser
         run: |
           set -euo pipefail
-          git clone --depth 1 https://github.com/flags-2-env/flags-2-env.git /tmp/flags-2-env
+          git init /tmp/flags-2-env
+          git -C /tmp/flags-2-env remote add origin https://github.com/flags-2-env/flags-2-env.git
+          git -C /tmp/flags-2-env fetch --depth 1 origin 7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9
+          git -C /tmp/flags-2-env checkout --detach FETCH_HEAD
+          test "$(git -C /tmp/flags-2-env rev-parse HEAD)" = "7da1ea0a67b43ee3e523e28b5bc4757cc886d3b9"
           make -C /tmp/flags-2-env cli
           echo "/tmp/flags-2-env/build" >> "$GITHUB_PATH"
       - name: Audit flag schema
