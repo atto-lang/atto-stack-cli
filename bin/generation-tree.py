@@ -41,8 +41,8 @@ def fail(s):
 def safe_relative(root, rel, directory=False):
     if not isinstance(rel, str) or not rel or "\\" in rel or "\x00" in rel:
         fail("invalid relative path")
-    # PurePosixPath normalizes '.', empty segments, and repeated separators.
-    # Reject those in the original text before constructing a filesystem path.
+    # PurePosixPath silently normalizes empty and dot segments. Reject
+    # their original spelling rather than admitting alternate identities.
     if rel.startswith("/") or any(x in ("", ".", "..") for x in rel.split("/")):
         fail("path must remain within project")
     p = pathlib.PurePosixPath(rel)
@@ -145,42 +145,51 @@ def ephemeral_port():
         s.bind(("127.0.0.1", 0))
         return s.getsockname()[1]
 
+# A retired process may appear in both "started" and "retired", while a
+# retirement thread may race grandaddy cleanup. Signaling an already-reaped
+# process group a second time could target a recycled process-group ID.
+# Serialize teardown and signal each owned group at most once.
+STOP_LOCK = threading.Lock()
+
 def stop(proc):
     if proc is None:
         return
-    # A worker can spawn compilers or actors and exit before its descendants.
-    # Always terminate the owned process group, even when its leader is dead.
-    if os.name == "posix":
-        try:
-            os.killpg(proc.pid, signal.SIGTERM)
-        except ProcessLookupError:
-            pass
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
-        # Escalate for children that ignored TERM. The process group survives
-        # its leader when descendants remain; a mere proc.poll() is insufficient.
-        try:
-            os.killpg(proc.pid, signal.SIGKILL)
-        except ProcessLookupError:
-            pass
-        try:
-            proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            pass
-    else:
-        if proc.poll() is not None:
+    with STOP_LOCK:
+        if getattr(proc, "_ores_process_group_stopped", False):
             return
-        try:
-            proc.terminate()
-            proc.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired):
-            proc.kill()
-            proc.wait(timeout=2)
+        proc._ores_process_group_stopped = True
+        if os.name == "posix":
+            # Do not require the leader to be alive: descendants can still
+            # belong to its process group.
+            try:
+                os.killpg(proc.pid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                os.killpg(proc.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            try:
+                proc.wait(timeout=2)
+            except subprocess.TimeoutExpired:
+                pass
+        else:
+            if proc.poll() is not None:
+                return
+            try:
+                proc.terminate()
+                proc.wait(timeout=2)
+            except (OSError, subprocess.TimeoutExpired):
+                proc.kill()
+                proc.wait(timeout=2)
 
 def retire_worker(state, proc):
-    # Allow a bounded in-flight drain, interrupted by grandaddy shutdown.
+    # A worker may still have admitted requests in flight. Allow a bounded
+    # drain, but make retirement interruptible on grandaddy shutdown.
     state["stop"].wait(4)
     try:
         stop(proc)
@@ -193,6 +202,8 @@ def cleanup_workers(state, started):
     state["stop"].set()
     with state["lock"]:
         live = [state["daddy"]] + list(state["children"].values())
+        # Retired generations must be reaped even if their daemon cleanup
+        # threads have not run before grandaddy termination.
         retired = list(state["retired"])
     for item in live:
         if item:
@@ -222,7 +233,6 @@ def await_ready(port, proc, token):
 def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
     port = ephemeral_port()
     if argv is None:
-        # Never put the internal bearer or source-derived marker in process argv.
         cmd = [sys.executable, str(script), "--internal", mode, "--worker-port",
                str(port)]
     else:
@@ -234,7 +244,7 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
             cmd.append(arg)
     env = {key: os.environ[key] for key in WORKER_ENV_ALLOWLIST if key in os.environ}
     env.update({"ORES_DEV_PORT": str(port), "ORES_DEV_HEALTH_TOKEN": token,
-                "ORES_DEV_MARKER": marker, "ORES_DEV_ROOT": str(root)})
+                "ORES_DEV_ROOT": str(root), "ORES_DEV_MARKER": marker})
     with tempfile.TemporaryFile(mode="w+t",encoding="utf-8") as worker_log:
         proc = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=worker_log,
@@ -503,7 +513,8 @@ def supervise(args):
                 "child", marker, token, row["dir"])
             state["children"][route] = child
             started.append(child[0])
-        # Deny a mixed startup generation if source changed during compilation.
+        # Never expose a mixed initial generation if source changes during
+        # cold compilation or worker readiness (the listener is not open yet).
         if digest_tree(root, middleware) != mhash or any(
             digest_tree(root, row["dir"], False) != state["initial_routes"][route]
             for route, row in routes.items()
@@ -528,7 +539,8 @@ def supervise(args):
         httpd.server_close()
     finally:
         state["stop"].set()
-        # A daemon watcher may still be admitting a slow guest-code candidate.
+        # Wait for any in-progress worker admission to observe stop and
+        # terminate its candidate; otherwise it can outlive this daemon.
         if watcher is not None:
             watcher.join(timeout=35)
         cleanup_workers(state, started)
