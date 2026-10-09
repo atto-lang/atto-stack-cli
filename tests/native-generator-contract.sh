@@ -16,6 +16,8 @@ grep -F 'rpc.rpc_hello(request)' "$tmp/api/src/routes/lambda.ores"
 grep -F 'oreslang.stack.inventory/v1' "$tmp/api/generated/route-manifest.json"
 "$cli" build --root "$tmp/api"
 test -s "$tmp/api/dist/oreslang-stack-source.tar.gz"
+tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslang-stack-run"
+tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "generated/route-manifest.json"
 printf '\n// deliberately stale\n' >> "$tmp/api/src/routes/rpc.ores"
 if "$cli" generate --kind all --check --root "$tmp/api"; then
   echo "stale generated file must fail verification" >&2
