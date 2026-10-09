@@ -4,10 +4,12 @@ import email.message
 import http.server
 import importlib.util
 import io
+import os
 import pathlib
 import threading
 import types
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 SPEC = importlib.util.spec_from_file_location("ores_generation_tree", ROOT / "bin/generation-tree.py")
@@ -72,6 +74,21 @@ class ProxyAdmission(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=2)
+
+    def test_worker_environment_drops_unrelated_parent_settings(self):
+        with mock.patch.dict(os.environ, {
+            "UNRELATED_PRIVATE_SETTING": "should-not-be-visible",
+            "ORESLANG_BIN": "/opt/test-interpreter",
+        }):
+            with mock.patch.object(TREE.subprocess, "Popen") as launch:
+                with mock.patch.object(TREE, "await_ready"):
+                    TREE.spawn_worker(ROOT / "bin/generation-tree.py", ROOT,
+                                      None, "child", "example", "local-admission")
+                    env = launch.call_args.kwargs["env"]
+        self.assertNotIn("UNRELATED_PRIVATE_SETTING", env)
+        self.assertEqual(env["ORESLANG_BIN"], "/opt/test-interpreter")
+        self.assertEqual(env["ORES_DEV_HEALTH_TOKEN"], "local-admission")
+        self.assertEqual(env["ORES_DEV_ROOT"], str(ROOT))
 
     def test_unambiguous_request_framing_and_target(self):
         invalid=[
