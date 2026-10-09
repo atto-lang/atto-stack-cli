@@ -147,7 +147,8 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   val String source = fs.read_text(path);
   val String handlers = fs.read_text(handler_path);
   let String manifest = "";
-  let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\ndefine module rpc as\n";
+  val String route_module = source.contains_literal("define module Route ") ? "Route" : "route";
+  let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module " + route_module + " from \"./route\";\n\ndefine module rpc as\n";
   let String lambda = generated_marker() + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\ndefine module lambda as\n";
   let String graphql = generated_marker() + "// GraphQL resolver scaffold only; no parser, validation or HTTP server.\nimport module rpc from \"./rpc\";\n\ndefine module graphql as\n";
   let String schema_query = generated_marker() + "type Query {\n";
@@ -178,7 +179,7 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
       return error("route must forward public String handler: " + symbol);
     fi
     seen = seen + method + "|@" + symbol + "|";
-    rpc = rpc + "pub fnc rpc_" + symbol + "(String request) -> String {\n  return route." + symbol + "(request);\n}\n\n";
+    rpc = rpc + "pub fnc rpc_" + symbol + "(String request) -> String {\n  return " + route_module + "." + symbol + "(request);\n}\n\n";
     lambda = lambda + "pub fnc invoke_" + symbol + "(String request) -> String {\n  return rpc.rpc_" + symbol + "(request);\n}\n\n";
     graphql = graphql + "pub fnc resolve_" + symbol + "(String request) -> String {\n  return rpc.rpc_" + symbol + "(request);\n}\n\n";
     if method == "GET"; then
@@ -353,8 +354,8 @@ fnc manifest_from_records(String role, String records): String {
 }
 
 fnc route_manifest(String root, String role, String kind, bool check, bool dry): String {
-  val String folder = is_api(role) ? "routes" : "pages";
-  val String path = root + "/src/" + folder;
+  // REST API and web page roots are explicit URL root anchors.
+  val String path = root + (is_api(role) ? "/src/routes/rest" : "/src/pages/root");
   val String records = walk(root, path, "/", "/", role, kind, check, dry, 0);
   if is_error(records); then return records; fi
   return manifest_from_records(role, records);
@@ -425,7 +426,7 @@ fnc init_project(String root, String entry, String role): String {
   fi
 
   val bool api = is_api(role);
-  val String route_dir = source_root + (api ? "/routes" : "/pages");
+  val String route_dir = source_root + (api ? "/routes/rest" : "/pages/root");
   if role == "infra"; then
     fs.mkdir_all(source_root + "/infra");
   else
@@ -457,12 +458,24 @@ fnc init_project(String root, String entry, String role): String {
     return "ORESLANG_STACK_ACTION_v1:initialized";
   fi
   if api; then
+    // Canonical contract: oresoftware/ores-interfaces/contracts/oreslang-route/v1.
+    fs.mkdir_all(source_root + "/contracts");
+    fs.write_text_atomic(source_root + "/contracts/RouteContract.ores",
+      "// Pinned from oresoftware/ores-interfaces/contracts/oreslang-route/v1/RouteContract.ores\n" +
+      "define contract RouteContract as\n" +
+      "  fnc get(String request) -> String;\n" +
+      "  fnc post(String request) -> String;\nend\n");
     fs.write_text_atomic(route_dir + "/handlers.ores",
-      "define module handlers as\n  pub fnc greet(String request) -> String {\n    return request;\n  }\nend\n");
+      "define module handlers as\n" +
+      "  pub fnc get(String request) -> String { return request; }\n" +
+      "  pub fnc post(String request) -> String { return request; }\nend\n");
     fs.write_text_atomic(route_dir + "/route.ores",
-      "// @ores-route GET / greet\nimport module handlers from \"./handlers\";\n\n" +
-      "define module route as\n  pub fnc greet(String request) -> String {\n" +
-      "    return handlers.greet(request);\n  }\nend\n");
+      "// @ores-route GET / get\n// @ores-route POST / post\n" +
+      "import contract RouteContract from \"../../contracts/RouteContract\";\n" +
+      "import module handlers from \"./handlers\";\n\n" +
+      "define module Route conforms RouteContract as\n" +
+      "  pub fnc get(String request) -> String { return handlers.get(request); }\n" +
+      "  pub fnc post(String request) -> String { return handlers.post(request); }\nend\n");
   else
     fs.write_text_atomic(route_dir + "/page.ores",
       "// @ores-page / render\ndefine module page as\n" +
