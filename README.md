@@ -84,18 +84,14 @@ race-free openat handles**, so hostile mutable project trees are not supported.
 - A Java/Graal Oreslang executable available as `oreslang` (or
   `ORESLANG_BIN=/path/to/executable`).
 - `flags2env` from canonical `flags-2-env/flags-2-env`.
-- Oreslang stdlib additions from
-  [`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496):
-  directory enumeration, symlink metadata, and safe literal string operations.
-  **Until this dependency is merged and packaged, a stock compiler may not
-  run this CLI.**
+- Directory metadata and string helpers originating in [Java/Graal PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496), plus the canonical cooperative native `_blocking` I/O runtime in [Java/Graal PR #522](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/522). The suffix means **source-level synchronous results with automatic continuation suspension**, never OS scheduler carrier blocking. Until those dependencies are released and pinned, a stock compiler may not run this CLI.
 
 Use `FLAGS2ENV_BIN` to locate a custom flags parser executable.
 The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser.
 
 ```sh
 bash tests/bootstrap-contract.sh
-# Only after installing a real Oreslang runtime with PR #496:
+# Only after installing a real Oreslang runtime with PR #522:
 bash tests/native-generator-contract.sh
 ```
 
@@ -109,5 +105,4 @@ real interpreter and its filesystem permission APIs. See
 
 A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
-still experimental and is not usable as the CLI runtime. This PR must remain
-draft until Java/Graal integration tests and the stdlib dependency are green.
+still experimental and is not usable as the CLI runtime. Real Java/Graal CLI init, check, routes and denial integration passed with an exact migrated source snapshot in [run #38005034460](https://github.com/athlet-o/athleto-e2e/actions/runs/38005034460). This PR remains draft until the compiler runtime dependency is released/pinned and the CLI's own distribution workflows are verified.
