@@ -96,6 +96,27 @@ class ProxyAdmission(unittest.TestCase):
         self.assertNotIn("--marker", argv)
         self.assertEqual(env["ORES_DEV_ROOT"], str(ROOT))
 
+    def test_truncated_content_length_never_reaches_upstream(self):
+        incomplete = request([("Content-Length", "5")], body=b"hi")
+        with mock.patch.object(TREE.http.client, "HTTPConnection") as dial:
+            status, headers, body = TREE.forwarded(12345, incomplete, "internal-token")
+        self.assertEqual(status, 400)
+        self.assertFalse(headers)
+        self.assertIn(b"incomplete", body)
+        dial.assert_not_called()
+
+    def test_internal_auth_not_exposed_in_process_arguments(self):
+        with mock.patch.object(TREE.subprocess, "Popen") as launch:
+            with mock.patch.object(TREE, "await_ready"):
+                TREE.spawn_worker(ROOT / "bin/generation-tree.py", ROOT,
+                                  None, "child", "source-marker", "auth-secret")
+                argv = launch.call_args.args[0]
+                env = launch.call_args.kwargs["env"]
+        self.assertNotIn("auth-secret", argv)
+        self.assertNotIn("source-marker", argv)
+        self.assertEqual(env["ORES_DEV_HEALTH_TOKEN"], "auth-secret")
+        self.assertEqual(env["ORES_DEV_MARKER"], "source-marker")
+
     def test_unambiguous_request_framing_and_target(self):
         invalid=[
             (request([("Transfer-Encoding","")]), 400),
