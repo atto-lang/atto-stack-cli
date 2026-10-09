@@ -258,6 +258,7 @@ def monitor(state, script, root, middleware, routes, fixture):
     last_m = state["initial_middleware"]
     last = dict(state["initial_routes"])
     pending = {}
+    restart_history = {}
     while not state["stop"].wait(POLL):
         try:
             current_m = digest_tree(root, middleware)
@@ -266,18 +267,30 @@ def monitor(state, script, root, middleware, routes, fixture):
             print("grandaddy: rejected source snapshot:", exc, file=sys.stderr, flush=True)
             continue
         now = time.monotonic()
+        with state["lock"]:
+            workers = {"daddy": state["daddy"], **state["children"]}
         changes = [("daddy", last_m, current_m)] + [
             (route, last[route], current[route]) for route in routes
         ]
         for key, before, after in changes:
-            if before == after:
+            # An OTP-style worker crash rotates its own generation. A crashed
+            # daddy does not invalidate healthy route children or grandaddy.
+            dead = workers[key][0].poll() is not None
+            if before == after and not dead:
                 pending.pop(key, None)
                 continue
-            if key not in pending or pending[key][0] != after:
-                pending[key] = (after, now)
+            intended = (after, dead)
+            if key not in pending or pending[key][0] != intended:
+                pending[key] = (intended, now)
                 continue
             if now - pending[key][1] < .3:
                 continue
+            recent = [t for t in restart_history.get(key, []) if now - t < 11]
+            restart_history[key] = recent
+            if len(recent) >= 3:
+                continue
+            # Failed worker admission consumes a restart budget too.
+            recent.append(now)
             try:
                 if key == "daddy":
                     new = spawn_worker(script, root, None if fixture else state["daddy_argv"],
@@ -302,7 +315,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                 pending.pop(key, None)
             except Exception as exc:
                 print("grandaddy: reload refused", key, exc, file=sys.stderr, flush=True)
-                pending[key] = (after, now)
+                pending[key] = (intended, now)
 
 def supervise(args):
     if os.name != "posix":
