@@ -112,7 +112,10 @@ case "$action" in
     printf '%s\n' "all generated adapters and Oreslang sources verified"
     ;;
   ORESLANG_STACK_ACTION_v1:dev)
-    exec "$oreslang_bin" --allow-read="$root" "$root/$entry"
+    compiler_check_all
+    # Only loopback network access is granted by default to dev servers.
+    # Production/adaptor permissions must be explicit and narrower.
+    exec "$oreslang_bin" --allow-read="$root" --allow-net=127.0.0.1,localhost "$root/$entry"
     ;;
   ORESLANG_STACK_ACTION_v1:build)
     if ! compiler_check_all; then
