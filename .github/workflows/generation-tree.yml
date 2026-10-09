@@ -20,5 +20,6 @@ jobs:
         run: |
           python3 -m py_compile bin/generation-tree.py tests/test_generation_tree.py
           python3 -m unittest discover -s tests -p test_generation_tree.py -v
+          python3 -m unittest discover -s tests -p test_real_handler_generations.py -v
       - name: Oreslang bootstrap shell parse
         run: bash -n bin/oreslang-stack
