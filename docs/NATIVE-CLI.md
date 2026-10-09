@@ -8,7 +8,7 @@ Bash source generator.
 
 ## Admission receipts
 
-- `ORESLANG_STACK_ACTION_v1:initialized`: native `init --role api|admin-api|web|admin-web` populated previously absent project sources and generated source adapters; the host then compiler-checks every Oreslang source. Any existing `src/`, `generated/` or project manifest fails before writes.
+- `ORESLANG_STACK_ACTION_v1:initialized`: native `init --role api|admin-api|web|admin-web|infra|lambdas` populated previously absent project sources; API/web get generated adapters while infra/lambdas get explicit non-deployable candidate manifests. The host then compiler-checks every Oreslang source. Any existing `src/`, `generated/` or project manifest fails before writes.
 
 - `ORESLANG_STACK_ACTION_v1:dev`: run the Oreslang entrypoint.
 - `ORESLANG_STACK_ACTION_v1:build`: compiler-check all `.ores` files and
@@ -25,6 +25,8 @@ selected project. Production hardening should replace mutable pathname-based
 metadata checks with directory-capability handles and atomic write/rename
 primitives. A build-time tool must not execute arbitrary user source, and a
 deploy command must not upload before compatibility proof.
+
+Infra and Lambdas candidate profiles: see [INFRA_LAMBDAS.md](INFRA_LAMBDAS.md). Their `check` command validates the exact `deployable = false` candidate manifest and compiles source; all route/development/build/deploy operations fail closed.
 
 ## Runtime dependency
 
