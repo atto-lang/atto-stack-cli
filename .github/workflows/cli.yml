@@ -1,0 +1,52 @@
+name: source-level CLI
+
+on:
+  push:
+    branches: [main, "feat/**"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  build-and-contract-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@6bed0761d98439e5a578e2877258200ad565ba87
+        with:
+          toolchain: "1.88"
+      - name: Run source-level discovery and mutation tests
+        run: cargo test --all-targets
+      - name: Test CLI behavior and deployment deny-list
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$(mktemp -d)"
+          trap 'rm -rf "$root"' EXIT
+          cargo run --quiet -- init --role api --root "$root/api"
+          cargo run --quiet -- generate all --root "$root/api"
+          cargo run --quiet -- generate all --root "$root/api" --check
+          cargo run --quiet -- routes --root "$root/api" | grep '"kind":"route"'
+          cargo run --quiet -- plan --target wasm-xprs --root "$root/api" | grep '"deployable": false'
+          if cargo run --quiet -- plan --target beamscale --root "$root/api"; then
+            echo "beamscale must not be a deployment target" >&2
+            exit 1
+          fi
+          if cargo run --quiet -- plan --target pony-expres --root "$root/api"; then
+            echo "Pony must not be a deployment target" >&2
+            exit 1
+          fi
+          if cargo run --quiet -- deploy --root "$root/api"; then
+            echo "unimplemented deploy must fail" >&2
+            exit 1
+          fi
+          cargo run --quiet -- init --role web --root "$root/web"
+          cargo run --quiet -- generate all --root "$root/web"
+          cargo run --quiet -- generate all --root "$root/web" --check
+          if cargo run --quiet -- generate rpc --root "$root/web"; then
+            echo "pages must not become RPC operations" >&2
+            exit 1
+          fi

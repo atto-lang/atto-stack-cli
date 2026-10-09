@@ -1,0 +1,4 @@
+namespace hello_api;
+pub fnc greet(String request) -> String {
+  return request;
+}

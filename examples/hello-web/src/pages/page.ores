@@ -1,0 +1,4 @@
+// @ores-page / render
+pub fnc render(String request) -> String {
+  return "<main>Hello from Oreslang</main>";
+}

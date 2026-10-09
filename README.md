@@ -40,3 +40,50 @@ See the parent comparison's `docs/ORESLANG-STACK.md` for the stack/host/compatib
 3. Explicit deployment target capabilities, deterministic plan output and no implicit deployment.
 4. Actor/process isolation, supervisor restart, hot-load compatibility semantics and truthful errors for unsupported operations.
 5. Real fixture build, launch and smoke tests with pinned revisions and recorded evidence.
+
+## Implemented source-level CLI (first slice, under review)
+
+The executable host-side adapter is written in Rust, like the existing \`ores-stack-cli\`, but **application source and framework extension points remain native Oreslang**. The Rust binary does not pretend to parse the full Oreslang language or replace the Oreslang HTTP router/RPC implementations. File discovery uses explicit Oreslang source conventions; semantic validity requires the **real Oreslang compiler**, invoked by \`check\`.
+
+\`\`\`bash
+cargo test --all-targets
+cargo run -- init --root /tmp/example-api --role api
+cargo run -- generate all --root /tmp/example-api
+cargo run -- generate all --root /tmp/example-api --check
+cargo run -- routes --root /tmp/example-api
+cargo run -- check --root /tmp/example-api --compiler oreslang
+cargo run -- plan --root /tmp/example-api --target wasm-xprs
+\`\`\`
+
+API repositories declare \`[repository] role = "api" | "admin-api"\` in \`oreslang-stack.toml\` and author \`src/routes/**/route.ores\` with a sibling \`handlers.ores\`. Each public wrapper carries a declared HTTP method/path/handler binding:
+
+\`\`\`ores
+// @ores-route GET /users/{id} get_user
+import module handlers from "./handlers";
+
+pub fnc get_user(String request) -> String {
+  return handlers.get_user(request);
+}
+\`\`\`
+
+The CLI emits sibling **generated** \`rpc.ores\` and \`lambda.ores\` adapters. Their current ABI is an intentionally minimal String request/response envelope; full typed GraphQL/RPC/Protobuf generation and deployment transports require additional compiler-backed contract work. A generated RPC wrapper forwards to the authored route which forwards to the authored handler. Generated Lambda source forwards through RPC; the FaaS adapter is **not yet implemented**.
+
+Web repositories declare \`role = "web" | "admin-web"\`, author \`src/pages/**/page.ores\` and get a sibling generated \`lambda.ores\`. Pages do not create RPC operations. The \`// @ores-page /users/{id} render\` declaration is checked against its filesystem path. Admin and public roles cannot be inferred from directory names.
+
+The CLI refuses symlinked source paths, missing handlers, conflicting dynamic route shapes, incorrect role/path declarations, stale generated outputs in \`--check\` mode, and overwriting unmarked source. It does not count a plan or a source-level generator snapshot as compiler or runtime proof.
+
+### Deployment target restrictions
+
+Only five stacks are *eligible for future deployment adapters*:
+
+| Target | Current admission |
+| --- | --- |
+| \`oreslang-stack\` | planned; Oreslang-native runtime adapter |
+| \`scintilla-run\` | planned; polyglot runtime adapter |
+| \`wasm-xprs\` | future Oreslang → WASM backend |
+| \`iso-lattes\` | future Oreslang → JS/WASM backend |
+| \`lunatic-lorry\` | future Oreslang → WASM backend |
+
+\`beamscale\` is permanently unsupported because Oreslang will not target BEAM/Erlang; \`pony-expres\` is unsupported because Oreslang does not compile to Pony. The Rust \`ores-stack\`, \`graal-show\` and \`litegraph\` are also not admitted deployment targets. \`plan\` gives a **\`deployable: false\`** receipt even for the five eligible lanes. \`deploy\` always fails until there is a real adapter and runtime proof.
+
+See also the [Oreslang-native routing contract](https://github.com/ores-truffle-oreslang/oreslang-http-routing), [Oreslang RPC contract](https://github.com/ores-truffle-oreslang/oreslang-rpc) and [Oreslang SSR library](https://github.com/ores-truffle-oreslang/oreslang-ssr).
