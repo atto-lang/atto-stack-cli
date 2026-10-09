@@ -195,9 +195,64 @@ compiler_check_all() {
   fi
 }
 
+# Confirm the scaffold is complete, independent of the guest's success receipt.
+verify_initialized_project() {
+  local marker candidate
+  [[ -f "$root/oreslang-stack.toml" && ! -L "$root/oreslang-stack.toml" ]] || return 1
+  printf '[repository]\nrole = "%s"\n' "$ORESLANG_STACK_ROLE" |
+    cmp -s - "$root/oreslang-stack.toml" || return 1
+  [[ -f "$root/src/main.ores" && ! -L "$root/src/main.ores" ]] || return 1
+  case "$ORESLANG_STACK_ROLE" in
+    api|admin-api)
+      for marker in "$root/src/routes/handlers.ores" "$root/src/routes/route.ores" \
+        "$root/src/routes/rpc.ores" "$root/src/routes/lambda.ores" \
+        "$root/generated/route-manifest.json"; do
+        [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      done
+      ;;
+    web|admin-web)
+      for marker in "$root/src/pages/page.ores" "$root/src/pages/lambda.ores" \
+        "$root/generated/route-manifest.json"; do
+        [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      done
+      [[ ! -e "$root/src/pages/rpc.ores" && ! -L "$root/src/pages/rpc.ores" ]] || return 1
+      ;;
+    infra|lambdas)
+      candidate="$root/.oreslang-stack-$ORESLANG_STACK_ROLE.candidate.toml"
+      [[ -f "$candidate" && ! -L "$candidate" ]] || return 1
+      printf '[candidate]\nrole = "%s"\ndeployable = false\n' "$ORESLANG_STACK_ROLE" |
+        cmp -s - "$candidate" || return 1
+      if [[ "$ORESLANG_STACK_ROLE" == infra ]]; then
+        marker="$root/src/infra/config.ores"
+      else
+        marker="$root/src/functions/hello/handler.ores"
+      fi
+      [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      [[ ! -e "$root/generated" && ! -L "$root/generated" ]] || return 1
+      [[ ! -e "$root/src/routes" && ! -e "$root/src/pages" ]] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
+# Independent host deny gate: a guest receipt must never widen candidate roles.
+if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != init ]]; then
+  if grep -Fxq 'role = "infra"' "$root/oreslang-stack.toml" ||
+     grep -Fxq 'role = "lambdas"' "$root/oreslang-stack.toml"; then
+    case "$requested_command" in
+      check|deploy) ;;
+      *) echo "oreslang-stack: infra/lambdas are candidate-only; command refused" >&2; exit 2 ;;
+    esac
+  fi
+fi
+
 case "$action" in
   ORESLANG_STACK_ACTION_v1:initialized)
-    [[ "${ORESLANG_STACK_COMMAND:-}" == "init" ]] || exit 1
+    [[ "$ORESLANG_STACK_COMMAND" == "init" ]] || exit 1
+    if ! verify_initialized_project; then
+      echo "oreslang-stack: init output incomplete or violates role contract" >&2
+      exit 1
+    fi
     compiler_check_all
     printf '%s\n' "initialized Oreslang ${ORESLANG_STACK_ROLE} project at ${root}"
     ;;
