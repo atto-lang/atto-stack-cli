@@ -74,7 +74,7 @@ The CLI refuses symlinked source paths, missing handlers, conflicting dynamic ro
 
 ### Deployment target restrictions
 
-Only five stacks are *eligible for future deployment adapters*:
+Only six stacks are *eligible for future deployment adapters*:
 
 | Target | Current admission |
 | --- | --- |
@@ -83,7 +83,8 @@ Only five stacks are *eligible for future deployment adapters*:
 | \`wasm-xprs\` | future Oreslang → WASM backend |
 | \`iso-lattes\` | future Oreslang → JS/WASM backend |
 | \`lunatic-lorry\` | future Oreslang → WASM backend |
+| `litegraph` | planned LLVM-compatible LiteGraph host/GPU adapter; ABI and device execution unproven |
 
-\`beamscale\` is permanently unsupported because Oreslang will not target BEAM/Erlang; \`pony-expres\` is unsupported because Oreslang does not compile to Pony. The Rust \`ores-stack\`, \`graal-show\` and \`litegraph\` are also not admitted deployment targets. \`plan\` gives a **\`deployable: false\`** receipt even for the five eligible lanes. \`deploy\` always fails until there is a real adapter and runtime proof.
+\`beamscale\` is permanently unsupported because Oreslang will not target BEAM/Erlang; \`pony-expres\` is unsupported because Oreslang does not compile to Pony. The Rust \`ores-stack\`, \`graal-show\` and \`litegraph\` are also not admitted deployment targets. \`plan\` gives a **\`deployable: false\`** receipt even for the six eligible lanes. \`deploy\` always fails until there is a real adapter and runtime proof.
 
 See also the [Oreslang-native routing contract](https://github.com/ores-truffle-oreslang/oreslang-http-routing), [Oreslang RPC contract](https://github.com/ores-truffle-oreslang/oreslang-rpc) and [Oreslang SSR library](https://github.com/ores-truffle-oreslang/oreslang-ssr).
