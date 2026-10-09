@@ -39,7 +39,7 @@ runtime PRs require independent Java compiler test evidence before merge.
 
 1. Prove CLI `.ores` source typechecks and generated adapters compile using
    the Java/Graal toolchain. No GHA status can substitute for real tests.
-2. Typed TypeSpec/GraphQL/Protobuf/RPC transport generation with domain contracts.
+2. Typed TypeSpec/Protobuf/RPC transport generation with domain contracts and executable GraphQL transport. GraphQL currently generates SDL fragments and source resolvers, NOT a GraphQL query parser, schema merger, or HTTP endpoint.
 3. Actor-aware hot reload and dev watching, supervisor lifecycle and rollback.
 4. Actual self-contained compiled backend artifacts and reproducible provenance.
 5. Host-specific adapters and real deploy receipts. All remain disabled until
