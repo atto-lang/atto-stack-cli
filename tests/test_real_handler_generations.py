@@ -56,7 +56,10 @@ class RealLanguageWorkerContract(unittest.TestCase):
                 stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,start_new_session=True)
             try:
                 initial=process.stdout.readline().strip()
-                self.assertTrue(initial,"language worker supervisor failed before admitting HTTP")
+                if not initial:
+                    try: process.wait(timeout=4)
+                    except subprocess.TimeoutExpired: process.kill(); process.wait(timeout=4)
+                    self.fail("language worker supervisor failed: " + process.stderr.read()[-3000:])
                 admission=json.loads(initial)
                 self.assertFalse(admission["fixture_echo"])
                 self.assertEqual(admission["grandaddy_pid"],process.pid)
