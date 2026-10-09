@@ -26,6 +26,14 @@ SCHEMA = "ores.dev.generations/v1"
 POLL = .15
 MAX_FILES = 4000
 MAX_BYTES = 4 * 1024 * 1024
+# Worker argv is trusted project configuration, but its process must not
+# automatically inherit the grandaddy's unrelated access keys or CI secrets.
+WORKER_ENV_ALLOWLIST = (
+    "PATH", "HOME", "TMPDIR", "TMP", "TEMP", "LANG", "LC_ALL", "LC_CTYPE",
+    "JAVA_HOME", "GRAALVM_HOME", "RUSTUP_HOME", "CARGO_HOME",
+    "RUSTUP_TOOLCHAIN", "ORESLANG_BIN", "ORESLANG_JAVA_PROJECT",
+    "PYTHONIOENCODING", "PYTHONUNBUFFERED"
+)
 
 def fail(s):
     raise ValueError(s)
@@ -181,8 +189,9 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
             for k, v in values.items():
                 arg = arg.replace(k, v)
             cmd.append(arg)
-    env = {**os.environ, "ORES_DEV_PORT": str(port), "ORES_DEV_HEALTH_TOKEN": token,
-           "ORES_DEV_ROOT": str(root)}
+    env = {key: os.environ[key] for key in WORKER_ENV_ALLOWLIST if key in os.environ}
+    env.update({"ORES_DEV_PORT": str(port), "ORES_DEV_HEALTH_TOKEN": token,
+                "ORES_DEV_ROOT": str(root)})
     with tempfile.TemporaryFile(mode="w+t",encoding="utf-8") as worker_log:
         proc = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=worker_log,
