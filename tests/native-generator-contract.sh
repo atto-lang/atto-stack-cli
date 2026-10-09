@@ -7,6 +7,15 @@ trap 'rm -rf "$tmp"' EXIT
 cp -R "$repo/examples/hello-api" "$tmp/api"
 cp -R "$repo/examples/hello-web" "$tmp/web"
 cli="$repo/bin/oreslang-stack"
+cp -R "$repo/examples/hello-api" "$tmp/manifest-collision"
+mkdir -p "$tmp/manifest-collision/generated"
+printf '{"schema":"foreign"}\n' > "$tmp/manifest-collision/generated/route-manifest.json"
+if "$cli" generate --kind all --root "$tmp/manifest-collision"; then
+  echo "foreign route manifest must fail before writing any adapters" >&2
+  exit 1
+fi
+test ! -e "$tmp/manifest-collision/src/routes/rpc.ores"
+test ! -e "$tmp/manifest-collision/src/routes/lambda.ores"
 "$cli" generate --kind all --root "$tmp/api"
 "$cli" generate --kind all --check --root "$tmp/api"
 "$cli" check --root "$tmp/api"

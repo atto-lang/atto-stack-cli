@@ -43,6 +43,17 @@ tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslan
 "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/project" | grep -F 'generated'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
+tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
+printf 'do-not-include\n' > "$tmp/project/src/.env"
+"$repo/bin/oreslang-stack" build --root "$tmp/project" >/dev/null
+if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.env'; then
+  echo "bundle must not contain .env secrets" >&2
+  exit 1
+fi
+if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/../escape.ores; then
+  echo "entrypath traversal must fail" >&2
+  exit 1
+fi
 if "$repo/bin/oreslang-stack" deploy --root "$tmp/project" --target oreslang-stack; then
   echo "deploy must never succeed" >&2
   exit 1
