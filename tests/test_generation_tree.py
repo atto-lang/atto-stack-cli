@@ -71,6 +71,12 @@ class GenerationalReloadContract(unittest.TestCase):
                 self.assertEqual(body1, b"one-v1")
                 self.assertEqual(body2, b"two-v1")
                 self.assertEqual(p1[:2], p2[:2])
+                def generation(path):
+                    code, headers, _ = request(path)
+                    self.assertEqual(code,200)
+                    return headers["X-Ores-Generation"]
+                self.assertEqual(generation("/one"), "d0:c0")
+                self.assertEqual(generation("/two"), "d0:c0")
                 self.assertEqual(request("/unknown")[0], 404)
                 # Ambiguous request framing must fail before proxying to daddy.
                 with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
@@ -99,6 +105,8 @@ class GenerationalReloadContract(unittest.TestCase):
                     self.fail("route child did not reload")
                 self.assertEqual(changed[:2], p1[:2], "grandaddy or daddy restarted on route edit")
                 self.assertNotEqual(changed[2], p1[2], "route child PID never changed")
+                self.assertEqual(generation("/one"), "d0:c1")
+                self.assertEqual(generation("/two"), "d0:c0")
                 unchanged, old_body, old_hash = snap("/two")
                 self.assertEqual(unchanged, p2)
                 self.assertEqual(old_body, b"two-v1")
@@ -116,6 +124,8 @@ class GenerationalReloadContract(unittest.TestCase):
                 self.assertEqual(after[0], p1[0])
                 self.assertEqual(after[2], changed[2])
                 self.assertEqual(snap("/two")[0][2], p2[2])
+                self.assertEqual(generation("/one"), "d1:c1")
+                self.assertEqual(generation("/two"), "d1:c0")
                 self.assertNotEqual(m1, new_hash)
                 # OTP-style child failure restarts only the failed leaf.
                 os.kill(int(after[2]), signal.SIGKILL)
@@ -132,6 +142,8 @@ class GenerationalReloadContract(unittest.TestCase):
                 else:
                     self.fail("crashed route child did not restart")
                 self.assertEqual(recovered[:2], after[:2])
+                self.assertEqual(generation("/one"), "d1:c2")
+                self.assertEqual(generation("/two"), "d1:c0")
                 self.assertEqual(body, b"one-v2")
                 self.assertEqual(snap("/two")[0][2], p2[2])
                 # Daddy crash likewise preserves both route worker PIDs.
@@ -150,6 +162,8 @@ class GenerationalReloadContract(unittest.TestCase):
                     self.fail("crashed middleware daddy did not restart")
                 self.assertEqual(restarted[0], recovered[0])
                 self.assertEqual(restarted[2], recovered[2])
+                self.assertEqual(generation("/one"), "d2:c2")
+                self.assertEqual(generation("/two"), "d2:c0")
                 self.assertEqual(snap("/two")[0][2], p2[2])
                 self.assertEqual(proc.poll(), None)
             finally:
