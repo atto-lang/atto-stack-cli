@@ -186,8 +186,10 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
 
 def forwarded(port, handler, token, child_port=None):
     # Every request has exactly one unambiguous framing mode.
-    if handler.headers.get("Transfer-Encoding"):
+    if handler.headers.get_all("Transfer-Encoding", []):
         return 400, {}, b"transfer-encoding not admitted"
+    if not handler.path.startswith("/") or handler.path.startswith("//"):
+        return 400, {}, b"origin-form request target required"
     lengths = handler.headers.get_all("Content-Length", [])
     if len(lengths) > 1 or (lengths and (not lengths[0].isascii() or not lengths[0].isdecimal())):
         return 400, {}, b"invalid content-length"
@@ -195,10 +197,15 @@ def forwarded(port, handler, token, child_port=None):
     if not 0 <= size <= 256 * 1024:
         return 413, {}, b"request body too large"
     payload = handler.rfile.read(size) if size else b""
+    # Connection names additional hop-by-hop fields; do not forward those
+    # even though the Connection header itself is removed.
+    connection_names = {name.strip().lower() for line in handler.headers.get_all("Connection", [])
+                        for name in line.split(",")}
+    hop = {"host", "connection", "content-length", "transfer-encoding",
+           "te", "trailer", "upgrade", "keep-alive", "proxy-connection",
+           "proxy-authorization", "proxy-authenticate"}
     headers = {k:v for k,v in handler.headers.items()
-               if k.lower() not in ("host", "connection", "content-length",
-                                    "transfer-encoding", "te", "trailer",
-                                    "upgrade", "keep-alive", "proxy-connection")
+               if k.lower() not in hop and k.lower() not in connection_names
                and not k.lower().startswith("x-ores-dev-")}
     headers["X-Ores-Dev-Token"] = token
     if child_port is not None:
@@ -210,9 +217,18 @@ def forwarded(port, handler, token, child_port=None):
         body = response.read(1024 * 1024 + 1)
         if len(body) > 1024 * 1024:
             return 502, {}, b"worker response too large"
-        excluded = ("connection", "transfer-encoding", "content-length", "server", "date")
-        return response.status, {k:v for k,v in response.getheaders()
-                                 if k.lower() not in excluded}, body
+        # Never publish the internal bearer token or worker target headers.
+        # Strip headers named by upstream Connection, not only static hop fields.
+        upstream_headers = response.getheaders()
+        connection_names = {name.strip().lower() for k,v in upstream_headers
+                            if k.lower() == "connection" for name in v.split(",")}
+        excluded = {"connection", "transfer-encoding", "content-length",
+                    "server", "date", "te", "trailer", "upgrade",
+                    "keep-alive", "proxy-connection", "proxy-authenticate",
+                    "proxy-authorization"} | connection_names
+        return response.status, {k:v for k,v in upstream_headers
+                                 if k.lower() not in excluded
+                                 and not k.lower().startswith("x-ores-dev-")}, body
     finally:
         conn.close()
 
