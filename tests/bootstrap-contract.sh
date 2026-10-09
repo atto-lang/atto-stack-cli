@@ -15,6 +15,13 @@ if [[ "$1" == "--check" ]]; then
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
+  if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
+    printf 'invoked\n' > "$MOCK_GUEST_INVOCATION_FILE"
+  fi
+  if [[ "${MOCK_SPOOF_INIT:-}" == true && "$ORESLANG_STACK_COMMAND" == init ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:initialized\n'
+    exit 0
+  fi
   if [[ "$ORESLANG_STACK_COMMAND" == "routes" || "$ORESLANG_STACK_COMMAND" == "check" ||
         ( "$ORESLANG_STACK_COMMAND" == "generate" && "$ORESLANG_STACK_CHECK" == "true" ) ]]; then
     for option in "$@"; do
@@ -47,7 +54,18 @@ if [[ "$1" == --allow-env=* ]]; then
             printf 'define module handler as\nend\n' > "$ORESLANG_STACK_ROOT/src/functions/hello/handler.ores"
           fi
         else
-          mkdir -p "$ORESLANG_STACK_ROOT/src/routes" "$ORESLANG_STACK_ROOT/generated"
+          mkdir -p "$ORESLANG_STACK_ROOT/generated"
+          printf '{"schema": "oreslang.stack.inventory/v1"}\n' > "$ORESLANG_STACK_ROOT/generated/route-manifest.json"
+          if [[ "$ORESLANG_STACK_ROLE" == api || "$ORESLANG_STACK_ROLE" == admin-api ]]; then
+            mkdir -p "$ORESLANG_STACK_ROOT/src/routes"
+            for name in handlers route rpc lambda; do
+              printf 'define module test as\nend\n' > "$ORESLANG_STACK_ROOT/src/routes/$name.ores"
+            done
+          else
+            mkdir -p "$ORESLANG_STACK_ROOT/src/pages"
+            printf 'define module test as\nend\n' > "$ORESLANG_STACK_ROOT/src/pages/page.ores"
+            printf 'define module test as\nend\n' > "$ORESLANG_STACK_ROOT/src/pages/lambda.ores"
+          fi
         fi
         printf 'ORESLANG_STACK_ACTION_v1:initialized\n'
       fi ;;
@@ -157,5 +175,31 @@ if "$repo/bin/oreslang-stack" init --role lambdas --root "$tmp/occupied-candidat
   exit 1
 fi
 test ! -e "$tmp/occupied-candidate/src"
+
+
+# A forged or premature init receipt cannot certify a missing scaffold.
+mkdir -p "$tmp/spoof-init"
+if MOCK_SPOOF_INIT=true "$repo/bin/oreslang-stack" init --role api --root "$tmp/spoof-init"; then
+  echo "init must reject success receipts with no files" >&2
+  exit 1
+fi
+test ! -e "$tmp/spoof-init/src"
+
+# Denied operations must not even invoke the guest (independent host gate).
+for role in infra lambdas; do
+  marker="$tmp/guest-$role-invoked"
+  if MOCK_GUEST_INVOCATION_FILE="$marker" "$repo/bin/oreslang-stack" build --root "$tmp/$role-project"; then
+    echo "$role build must fail before guest launch" >&2
+    exit 1
+  fi
+  test ! -e "$marker"
+done
+
+# Check the actual init role, not just an Oreslang receipt.
+mkdir -p "$tmp/role-mismatch"
+if MOCK_SPOOF_INIT=true "$repo/bin/oreslang-stack" init --role lambdas --root "$tmp/role-mismatch"; then
+  echo "init role mismatch must fail" >&2
+  exit 1
+fi
 
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
