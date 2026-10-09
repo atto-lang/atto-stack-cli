@@ -38,11 +38,34 @@ fi
 
 # shell-env emits properly shell-quoted exports, rejects unknown options,
 # and reports structured parse errors with a nonzero exit code.
+# The command token is mandatory and controls the host receipt whitelist.
+# Do not allow inherited ORESLANG_STACK_COMMAND to replace command selection.
+if (( $# == 0 )); then
+  echo "oreslang-stack: expected dev|build|deploy|routes|generate|check" >&2
+  exit 2
+fi
+requested_command="$1"
+case "$requested_command" in
+  dev|build|deploy|routes|generate|check) ;;
+  *) echo "oreslang-stack: unknown command: $requested_command" >&2; exit 2 ;;
+esac
 if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
   echo "oreslang-stack: invalid flags-2-env arguments" >&2
   exit 2
 fi
 eval "$exports"
+if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
+  echo "oreslang-stack: flags2env command does not match requested command" >&2
+  exit 2
+fi
+if [[ "${ORESLANG_STACK_POSITIONALS:-[]}" != "[]" ]]; then
+  echo "oreslang-stack: unrecognized positional arguments" >&2
+  exit 2
+fi
+export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
+export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
+export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
 
 root="${ORESLANG_STACK_ROOT:-.}"
 entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
@@ -56,6 +79,11 @@ if [[ ! -d "$root" || -L "$root" ]]; then
   exit 2
 fi
 root="$(cd -- "$root" && pwd -P)"
+export ORESLANG_STACK_ROOT="$root"
+if [[ -L "$root/src" || ( -e "$root/src" && ! -d "$root/src" ) || -L "$root/generated" ]]; then
+  echo "oreslang-stack: symlink or invalid source/generated directory" >&2
+  exit 2
+fi
 if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
   echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
   exit 2
@@ -72,24 +100,56 @@ esac
 # Read-only and env permissions are explicitly scoped. No --allow-all.
 # The .ores program emits exactly one validated action; any other output
 # is a failure, even if the host interpreter exits successfully.
-if ! action="$("$oreslang_bin" --allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK --allow-read="$root" --allow-write="$root" "$cli_home/src/main.ores")"; then
+# Compiler/generator guest can read the project. Only commands that actually
+# generate code receive write grants; check/routes/deploy are strictly read-only.
+admission_permissions=(
+  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK"
+  "--allow-read=$root"
+)
+case "$requested_command" in
+  dev|build) admission_permissions+=("--allow-write=$root/src,$root/generated") ;;
+  generate)
+    if [[ "$ORESLANG_STACK_CHECK" != "true" ]]; then
+      admission_permissions+=("--allow-write=$root/src,$root/generated")
+    fi ;;
+esac
+if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
 compiler_check_all() {
-  local file
-  local checked=0
+  local file checked=0 inventory symlinks
+  if [[ ! -d "$root/src" || -L "$root/src" ]]; then
+    echo "oreslang-stack: source tree missing or symlinked" >&2
+    return 1
+  fi
+  if ! symlinks="$(find "$root/src" -type l -print -quit)"; then
+    echo "oreslang-stack: source traversal failed" >&2
+    return 1
+  fi
+  if [[ -n "$symlinks" ]]; then
+    echo "oreslang-stack: source tree contains a symlink: $symlinks" >&2
+    return 1
+  fi
+  inventory="$(mktemp)"
+  if ! find "$root/src" -type f -name '*.ores' -print0 > "$inventory"; then
+    rm -f "$inventory"
+    echo "oreslang-stack: source inventory failed" >&2
+    return 1
+  fi
   while IFS= read -r -d '' file; do
     if ! "$oreslang_bin" --check "$file"; then
+      rm -f "$inventory"
       echo "oreslang-stack: compiler rejected $file" >&2
       return 1
     fi
     checked=$((checked + 1))
-  done < <(find "$root/src" -type f -name '*.ores' -print0 | LC_ALL=C sort -z)
+  done < "$inventory"
+  rm -f "$inventory"
   if (( checked == 0 )); then
-    echo "oreslang-stack: no .ores source files to check" >&2
+    echo "oreslang-stack: no .ores files to check" >&2
     return 1
   fi
 }
@@ -144,17 +204,37 @@ case "$action" in
       echo "oreslang-stack: project compiler manifest symlink refused" >&2
       exit 1
     fi
-    # Include the real generated route inventory and a runtime-dependent
-    # Oreslang launcher. This is a runnable source distribution, NOT a native binary.
-    if [[ ! -s "$root/generated/route-manifest.json" ]]; then
-      echo "oreslang-stack: missing generated route manifest" >&2
+    # Source distribution is allowlisted, not a recursive project tarball.
+    # Only Oreslang source, the project manifest, route inventory and the
+    # runner are packaged. Secrets and .env files are intentionally excluded.
+    if [[ ! -s "$root/generated/route-manifest.json" || -L "$root/generated/route-manifest.json" ]]; then
+      echo "oreslang-stack: generated route manifest missing or symlinked" >&2
       exit 1
     fi
-    if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
-      tar -czf "$tmp" -C "$root" src oreslang-stack.toml .oreslangc.cfg.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
-    else
-      tar -czf "$tmp" -C "$root" src oreslang-stack.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
+    stage="$(mktemp -d "$root/dist/.oreslang-stage.XXXXXXXX")"
+    trap 'rm -rf "$stage"; rm -f "$tmp"' EXIT
+    mkdir -p "$stage/src" "$stage/generated" "$stage/bin"
+    file_list="$(mktemp)"
+    if ! find "$root/src" -type f -name '*.ores' -print0 > "$file_list"; then
+      rm -f "$file_list"
+      echo "oreslang-stack: cannot inventory Oreslang source for bundling" >&2
+      exit 1
     fi
+    while IFS= read -r -d '' file; do
+      relative="${file#"$root/"}"
+      mkdir -p "$stage/$(dirname "$relative")"
+      cp "$file" "$stage/$relative"
+    done < "$file_list"
+    rm -f "$file_list"
+    cp "$root/oreslang-stack.toml" "$stage/oreslang-stack.toml"
+    cp "$root/generated/route-manifest.json" "$stage/generated/route-manifest.json"
+    cp "$cli_home/bin/oreslang-stack-run" "$stage/bin/oreslang-stack-run"
+    if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
+      cp "$root/.oreslangc.cfg.toml" "$stage/.oreslangc.cfg.toml"
+    fi
+    tar -czf "$tmp" -C "$stage" .
+    rm -rf "$stage"
+    mv -f -- "$tmp" "$artifact"
     mv -f -- "$tmp" "$artifact"
     trap - EXIT
     printf 'Oreslang checked source bundle: %s\n' "$artifact"
