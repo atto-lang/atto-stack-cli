@@ -81,6 +81,17 @@ occur for an in-flight request: **no zero-downtime SLA is claimed**.
 Route snapshots cover direct route-folder files; middleware snapshots
 cover its subtree.
 
+## Tested crash recovery and source admission
+
+The supervisor detects a crashed child or daddy and rebuilds only that
+worker, leaving grandaddy and sibling route children undisturbed. Reload
+intensity is limited to three attempts per 11 seconds per worker;
+a new source digest resets the failed-compilation admission budget.
+A candidate must return authenticated loopback health within 30 seconds
+before it can replace its predecessor. Invalid source code leaves the
+last healthy route generation serving. Tests use SIGKILL and compare
+actual PIDs and HTTP bodies before/after the swap.
+
 ## Audit boundaries and parity gaps
 
 This is a developer-local, explicitly opted-in process supervisor.
@@ -98,8 +109,11 @@ Oreslang HTTP examples:
 
 The existing REST demo uses method sources such as
 src/routes/rest/health/get.ores and a startup-generated central
-registry. This first generation-tree contract deliberately requires
-route.ores / route.rs per worker folder and explicit worker commands.
+registry. By default, route.ores or route.rs must exist in each worker directory.
+ Oreslang may select source_file: "get.ores" (or post/put/patch/delete/
+ head/options.ores) to mirror the REST demo's route-file layout, but an
+ explicit HTTP worker adapter is still required. The actor source file is
+ not itself an HTTP listener.
 It does **not** hot-swap actors inside that existing server or rewire
 its generated route registry. That needs a separate runtime ABI and
 integration test.
