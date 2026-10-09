@@ -29,7 +29,7 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
-| `build` | Generation, compiler checks, reproducible source archive; **not a compiled native/JVM/WASM executable** |
+| `build` | Generation, compiler checks, a source distribution containing a runnable `bin/oreslang-stack-run` (requires installed Oreslang); **not a compiled native/JVM/WASM executable** |
 | `deploy` | Explicit **hard failure** until a backend-specific certified deploy adapter exists |
 
 ## Source layout
