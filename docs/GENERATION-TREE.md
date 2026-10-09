@@ -202,3 +202,29 @@ Full Rust workspace Cargo builds currently depend on private Git repositories
 and need a credential-free dependency mirror to validate in CI. Native
 GraalVM compilation of every Oreslang guest handler and production deployment
 are still not implemented by this CLI feature.
+
+## October 9 follow-up: deep lifecycle and admission verification
+
+- Process-group termination is now idempotent, serialized across retirement
+  threads and shutdown. This avoids a second `killpg` signal after a
+  previously owned group may have been reaped and its numeric ID reused.
+  POSIX group-ID reuse **before the first teardown** remains a limitation;
+  this is not a hostile-tenant process sandbox.
+- An excessively long decimal `Content-Length` is rejected with HTTP 413
+  *before* Python's integer conversion. This closes an exception/connection
+  drop path for oversized HTTP framing fields.
+- `tests/test_generation_lifecycle_audit.py` verifies concurrent teardown
+  and repeated teardown, idle generation stability, two consecutive route
+  edits, sibling identity preservation, and no unprompted reload beyond the
+  former generation's four-second retirement delay.
+- These tests run in both generation-tree workflow definitions. The shared
+  supervisor source is intentionally byte-identical across the two CLI
+  repositories and must remain so for parity.
+
+**Verification scope:** The Python fixture proves PID/HTTP/reload behavior
+for both route-file extensions; it does not run the actual Oreslang guest.
+The separate Java/Graal integration test is required to prove guest-code
+execution. Full Rust CLI compilation requires the private pinned Cargo
+dependencies to be accessible to CI, and the Oreslang CLI shell/guest
+bootstrap has its own independent workflow. Treat those as separate gates,
+not as covered by a successful supervisor test.
