@@ -268,6 +268,10 @@ def forwarded(port, handler, token, child_port=None):
     lengths = handler.headers.get_all("Content-Length", [])
     if len(lengths) > 1 or (lengths and (not lengths[0].isascii() or not lengths[0].isdecimal())):
         return 400, {}, b"invalid content-length"
+    # Reject excessive decimal digits before Python's integer conversion
+    # raises the interpreter's integer-string-length limit exception.
+    if lengths and len(lengths[0]) > 6:
+        return 413, {}, b"request body too large"
     size = int(lengths[0]) if lengths else 0
     if not 0 <= size <= 256 * 1024:
         return 413, {}, b"request body too large"
