@@ -264,7 +264,8 @@ case "$action" in
     ;;
   ORESLANG_STACK_ACTION_v1:generated)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "generate" ]] || exit 1
-    printf '%s\n' "generated Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
+    compiler_check_all
+    printf '%s\n' "generated and compiler-checked Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
     ;;
   ORESLANG_STACK_ACTION_v1:check)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
