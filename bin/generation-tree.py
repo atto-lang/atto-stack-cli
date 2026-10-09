@@ -148,13 +148,13 @@ def await_ready(port, proc, token):
         time.sleep(.04)
     fail("worker readiness deadline exceeded")
 
-def spawn_worker(script, root, argv, mode, marker, token):
+def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
     port = ephemeral_port()
     if argv is None:
         cmd = [sys.executable, str(script), "--internal", mode, "--worker-port",
                str(port), "--token", token, "--marker", marker]
     else:
-        values = {"{port}": str(port), "{root}": str(root), "{source_dir}": str(root / marker)}
+        values = {"{port}": str(port), "{root}": str(root), "{source_dir}": str(root / (source_dir or marker))}
         cmd = []
         for arg in argv:
             for k, v in values.items():
@@ -269,7 +269,7 @@ def monitor(state, script, root, middleware, routes, fixture):
             try:
                 if key == "daddy":
                     new = spawn_worker(script, root, None if fixture else state["daddy_argv"],
-                                       "daddy", after, state["token"])
+                                       "daddy", after, state["token"], middleware)
                     with state["lock"]:
                         old = state["daddy"]
                         state["daddy"] = new
@@ -279,7 +279,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                     leaf = "route.ores" if state["lang"] == "oreslang" else "route.rs"
                     marker = (root / row["dir"] / leaf).read_text()[:256].strip() if fixture else row["dir"]
                     new = spawn_worker(script, root, None if fixture else row["argv"],
-                                       "child", marker, state["token"])
+                                       "child", marker, state["token"], row["dir"])
                     with state["lock"]:
                         old = state["children"][key]
                         state["children"][key] = new
@@ -309,14 +309,14 @@ def supervise(args):
         state["initial_routes"] = {route:digest_tree(root,row["dir"],False) for route,row in routes.items()}
         state["daddy"] = spawn_worker(script, root,
              None if config.get("fixture_echo") else config["daddy_argv"],
-             "daddy", mhash, token)
+             "daddy", mhash, token, middleware)
         started.append(state["daddy"][0])
         for route,row in routes.items():
             leaf = "route.ores" if args.language == "oreslang" else "route.rs"
             marker = (root / row["dir"] / leaf).read_text()[:256].strip() if config.get("fixture_echo") else row["dir"]
             child = spawn_worker(script, root,
                 None if config.get("fixture_echo") else row["argv"],
-                "child", marker, token)
+                "child", marker, token, row["dir"])
             state["children"][route] = child
             started.append(child[0])
         httpd = HttpService(("127.0.0.1", port), Worker)
