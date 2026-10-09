@@ -371,6 +371,12 @@ def monitor(state, script, root, middleware, routes, fixture):
                     if state["stop"].is_set():
                         stop(new[0])
                         return
+                    # Only promote the generation whose exact watched source
+                    # fingerprint was admitted. Source can change while a
+                    # guest compiler warms up or an invalid build fails.
+                    if digest_tree(root, middleware) != after:
+                        stop(new[0])
+                        raise ValueError("middleware changed during worker admission")
                     with state["lock"]:
                         old = state["daddy"]
                         state["daddy"] = new
@@ -384,6 +390,9 @@ def monitor(state, script, root, middleware, routes, fixture):
                     if state["stop"].is_set():
                         stop(new[0])
                         return
+                    if digest_tree(root, row["dir"], False) != after:
+                        stop(new[0])
+                        raise ValueError("route changed during worker admission")
                     with state["lock"]:
                         old = state["children"][key]
                         state["children"][key] = new
