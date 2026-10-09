@@ -2,6 +2,8 @@
 """Real HTTP/PID contract for the opt-in Oreslang/Rust three-generation host."""
 import http.client
 import json
+import os
+import signal
 import pathlib
 import socket
 import subprocess
@@ -100,6 +102,40 @@ class GenerationalReloadContract(unittest.TestCase):
                 self.assertEqual(after[2], changed[2])
                 self.assertEqual(snap("/two")[0][2], p2[2])
                 self.assertNotEqual(m1, new_hash)
+                # OTP-style child failure restarts only the failed leaf.
+                os.kill(int(after[2]), signal.SIGKILL)
+                deadline = time.monotonic() + 9
+                while time.monotonic() < deadline:
+                    time.sleep(.15)
+                    status, hdr, body = request("/one")
+                    recovered = (
+                        hdr.get("X-Ores-Grandaddy-PID"),
+                        hdr.get("X-Ores-Daddy-PID"),
+                        hdr.get("X-Ores-Child-PID"))
+                    if status == 200 and recovered[2] != after[2]:
+                        break
+                else:
+                    self.fail("crashed route child did not restart")
+                self.assertEqual(recovered[:2], after[:2])
+                self.assertEqual(body, b"one-v2")
+                self.assertEqual(snap("/two")[0][2], p2[2])
+                # Daddy crash likewise preserves both route worker PIDs.
+                os.kill(int(recovered[1]), signal.SIGKILL)
+                deadline = time.monotonic() + 9
+                while time.monotonic() < deadline:
+                    time.sleep(.15)
+                    status, hdr, body = request("/one")
+                    restarted = (
+                        hdr.get("X-Ores-Grandaddy-PID"),
+                        hdr.get("X-Ores-Daddy-PID"),
+                        hdr.get("X-Ores-Child-PID"))
+                    if status == 200 and restarted[1] != recovered[1]:
+                        break
+                else:
+                    self.fail("crashed middleware daddy did not restart")
+                self.assertEqual(restarted[0], recovered[0])
+                self.assertEqual(restarted[2], recovered[2])
+                self.assertEqual(snap("/two")[0][2], p2[2])
                 self.assertEqual(proc.poll(), None)
             finally:
                 proc.terminate()
