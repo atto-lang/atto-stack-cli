@@ -203,8 +203,12 @@ case "$action" in
     fi
     mkdir -p -- "$root/dist"
     artifact="$root/dist/oreslang-stack-source.tar.gz"
+    if [[ -L "$artifact" || ( -e "$artifact" && ! -f "$artifact" ) ]]; then
+      echo "oreslang-stack: source-bundle destination must be a regular file" >&2
+      exit 1
+    fi
     tmp="$(mktemp "$root/dist/.oreslang-stack.XXXXXXXX")"
-    trap 'rm -f -- "$tmp"' EXIT
+    trap 'rm -f "$tmp"' EXIT
     if [[ -L "$root/.oreslangc.cfg.toml" ]]; then
       echo "oreslang-stack: project compiler manifest symlink refused" >&2
       exit 1
@@ -217,7 +221,8 @@ case "$action" in
       exit 1
     fi
     stage="$(mktemp -d "$root/dist/.oreslang-stage.XXXXXXXX")"
-    trap 'rm -rf "$stage"; rm -f "$tmp"' EXIT
+    file_list=""
+    trap 'rm -rf "$stage"; rm -f "$tmp"; if [[ -n "${file_list:-}" ]]; then rm -f "$file_list"; fi' EXIT
     mkdir -p "$stage/src" "$stage/generated" "$stage/bin"
     file_list="$(mktemp)"
     if ! find "$root/src" -type f -name '*.ores' -print0 > "$file_list"; then
