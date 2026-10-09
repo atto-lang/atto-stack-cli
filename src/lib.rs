@@ -129,6 +129,7 @@ pub fn execute(args: &[String]) -> Result<String, String> {
             if opt.role.is_some() || opt.check { return Err("check accepts neither --role nor --check".into()); }
             compiler_check(&opt.root, &opt.compiler)
         }
+        "plan" => plan(tail),
         "dev" | "build" | "deploy" => Err(format!(
             "{command} requires an admitted Oreslang compiler/runtime and deployment adapter; no stub success is permitted"
         )),
@@ -137,7 +138,36 @@ pub fn execute(args: &[String]) -> Result<String, String> {
 }
 
 fn help() -> String {
-    "Usage: oreslang-stack init --role api|admin-api|web|admin-web [--root DIR]\n  oreslang-stack inspect|routes [--root DIR]\n  oreslang-stack generate rpc|lambda|all [--root DIR] [--check]\n  oreslang-stack check [--root DIR] [--compiler EXEC]\n  oreslang-stack version\n\nGeneration is source-level only. Build/deploy require a real runtime adapter.".into()
+    "Usage: oreslang-stack init --role api|admin-api|web|admin-web [--root DIR]\n  oreslang-stack inspect|routes [--root DIR]\n  oreslang-stack generate rpc|lambda|all [--root DIR] [--check]\n  oreslang-stack check [--root DIR] [--compiler EXEC]\n  oreslang-stack plan --target TARGET [--root DIR]\n  oreslang-stack version\n\nGeneration is source-level only. Build/deploy require a real runtime adapter.".into()
+}
+
+/// A truthful, non-deployable target plan; never an execution receipt.
+fn plan(args: &[String]) -> Result<String, String> {
+    let (flag, more) = args.split_first().ok_or("plan requires --target STACK")?;
+    if flag != "--target" { return Err("plan requires --target STACK".into()); }
+    let (target, more) = more.split_first().ok_or("plan requires a target name")?;
+    let opt = options(more)?;
+    if opt.role.is_some() || opt.check { return Err("plan does not accept --role or --check".into()); }
+    let inv = discover(&opt.root)?;
+    // Never represent a dirty or missing generated artifact as deployable.
+    generate(&opt.root, "all", true)?;
+    let (admission, artifact, reason) = match target.as_str() {
+        "oreslang-stack" => ("planned", "oreslang-native", "native Oreslang compiler/runtime adapter not admitted"),
+        "scintilla-run" => ("planned", "oreslang-runtime-adapter", "Scintilla polyglot adapter not admitted"),
+        "wasm-xprs" => ("future-backend", "wasm", "Oreslang-to-WASM compiler and host adapter not implemented"),
+        "iso-lattes" => ("future-backend", "js-or-wasm", "Oreslang-to-JS/WASM compiler and isolate adapter not implemented"),
+        "lunatic-lorry" => ("future-backend", "wasm", "Oreslang-to-WASM compiler and actor host adapter not implemented"),
+        "beamscale" => return Err("unsupported deployment target beamscale: Oreslang will not compile to Erlang/BEAM".into()),
+        "pony-expres" => return Err("unsupported deployment target pony-expres: Oreslang will not compile to Pony".into()),
+        "ores-stack" | "graal-show" | "litegraph" =>
+            return Err(format!("unsupported Oreslang deployment target {target}: no admitted source/backend/host adapter")),
+        _ => return Err(format!("unsupported Oreslang deployment target {target:?}")),
+    };
+    Ok(format!(
+        "{{\n  \"schema\": \"oreslang.stack.deploy-plan/v1\",\n  \"source_language\": \"oreslang\",\n  \"target\": {},\n  \"repository_role\": {},\n  \"status\": {},\n  \"required_artifact\": {},\n  \"deployable\": false,\n  \"reason\": {}\n}}",
+        json_string(target), json_string(inv.role.as_str()), json_string(admission),
+        json_string(artifact), json_string(reason)
+    ))
 }
 
 fn create_project(opt: &Config) -> Result<String, String> {
@@ -541,6 +571,28 @@ mod tests {
         assert!(gen(&root, &["all"]).unwrap_err().contains("invalid method"));
         fs::write(root.join("oreslang-stack.toml"), "[repository]\nrole = \"not-real\"").unwrap();
         assert!(gen(&root, &["all"]).unwrap_err().contains("invalid repository role"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn deployment_allowlist_and_no_false_success() {
+        let root = temp();
+        init(&root, "api");
+        gen(&root, &["all"]).unwrap();
+        for target in ["oreslang-stack", "scintilla-run", "wasm-xprs", "iso-lattes", "lunatic-lorry"] {
+            let output = execute(&[
+                "plan".into(), "--target".into(), target.into(),
+                "--root".into(), root.display().to_string()
+            ]).unwrap();
+            assert!(output.contains("\"deployable\": false"));
+            assert!(output.contains(target));
+        }
+        for target in ["beamscale", "pony-expres", "ores-stack", "graal-show", "litegraph"] {
+            let error = execute(&[
+                "plan".into(), "--target".into(), target.into(),
+                "--root".into(), root.display().to_string()
+            ]).unwrap_err();
+            assert!(error.contains("unsupported"));
+        }
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
