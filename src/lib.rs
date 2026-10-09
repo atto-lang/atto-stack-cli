@@ -437,10 +437,23 @@ fn sync_one(path: &Path, content: &str, check: bool) -> Result<(), String> {
         if path.extension().and_then(|s| s.to_str()) == Some("ores") && !old.starts_with(GENERATED) {
             return Err(format!("refusing to overwrite hand-authored source: {}", path.display()));
         }
+        if path.extension().and_then(|s| s.to_str()) == Some("json") &&
+            !old.contains("\"schema\": \"oreslang.stack.inventory/v1\"") {
+            return Err(format!("refusing to overwrite unowned JSON manifest: {}", path.display()));
+        }
         if old == content { return Ok(()); }
     }
     if check { return Err(format!("generated output missing/stale: {}", path.display())); }
     let parent = path.parent().ok_or("generated path has no parent")?;
+    // Guard every already-existing parent against symlink traversal.
+    for ancestor in parent.ancestors() {
+        if ancestor.exists() {
+            let m = fs::symlink_metadata(ancestor).map_err(|e| e.to_string())?;
+            if m.file_type().is_symlink() {
+                return Err(format!("refusing output through a symlink ancestor: {}", ancestor.display()));
+            }
+        }
+    }
     if !parent.exists() { fs::create_dir_all(parent).map_err(|e| e.to_string())?; }
     let temp = parent.join(format!(".oreslang-stack-{}.tmp", std::process::id()));
     if temp.exists() { return Err("temporary generator file already exists".into()); }
@@ -560,6 +573,29 @@ mod tests {
             fs::write(folder.join("route.ores"), format!("// @ores-route GET /users/{{{segment}}} show\nimport module handlers from \"./handlers\";\npub fnc show(String request) -> String {{ return handlers.show(request); }}")).unwrap();
         }
         assert!(gen(&root, &["all"]).unwrap_err().contains("ambiguous"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn authored_json_manifest_is_not_clobbered() {
+        let root = temp();
+        init(&root, "api");
+        fs::create_dir_all(root.join("generated")).unwrap();
+        fs::write(root.join("generated/route-manifest.json"), "{\"hello\":true}").unwrap();
+        let result = gen(&root, &["all"]).unwrap_err();
+        assert!(result.contains("unowned JSON manifest"));
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[cfg(unix)]
+    #[test]
+    fn symlinked_generated_parent_is_denied() {
+        use std::os::unix::fs::symlink;
+        let root = temp();
+        init(&root, "api");
+        let destination = root.join("outside");
+        fs::create_dir_all(&destination).unwrap();
+        symlink(&destination, root.join("generated")).unwrap();
+        assert!(gen(&root, &["all"]).unwrap_err().contains("symlink ancestor"));
+        assert!(!destination.join("route-manifest.json").exists());
         fs::remove_dir_all(root).unwrap();
     }
     #[test]
