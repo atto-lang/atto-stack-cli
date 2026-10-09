@@ -95,7 +95,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
     if path.ends_with(".ores"), !previous.starts_with(GENERATED); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
-    if path.ends_with(".json"), !previous.contains_literal("\"schema\": \"oreslang.stack.inventory/v1\""); then
+    if path.ends_with(".json"), !previous.starts_with("{\\n  \\"schema\\": \\"oreslang.stack.inventory/v1\\""); then
       return error("refusing to overwrite unowned route manifest: " + path);
     fi
     if check, previous != generated; then
@@ -108,7 +108,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
     if check; then return error("missing generated output: " + path); fi
   fi
   if !dry, !check; then
-    fs.write_text(path, generated);
+    fs.write_text_atomic(path, generated);
   fi
   return "";
 }
@@ -250,11 +250,11 @@ fnc walk(String root, String dir, String url, String shape,
     else
       if name == "rpc.ores" | name == "lambda.ores"; then
         val targeted = kind == "all" |
-          !(kind != "rpc" | name != "rpc.ores") |
-          !(kind != "lambda" | name != "lambda.ores");
-        val valid = !(!has_leaf |
-          !(!( !api | !(name == "rpc.ores" | name == "lambda.ores")) |
-            !(api | name != "lambda.ores")));
+          (kind == "rpc" ? name == "rpc.ores" : false) |
+          (kind == "lambda" ? name == "lambda.ores" : false);
+        val valid = has_leaf ?
+          (api ? (name == "rpc.ores" | name == "lambda.ores") : name == "lambda.ores") :
+          false;
         if targeted, !valid; then
           val old = fs.read_text(child);
           if !old.starts_with(GENERATED); then
@@ -312,16 +312,28 @@ fnc generate(String root, String role, String kind, bool check): String {
   val inspected = route_manifest(root, role, kind, false, true);
   if is_error(inspected); then return inspected; fi
 
-  // Phase 2: verify or materialize generated Oreslang adapters.
-  val manifest = route_manifest(root, role, kind, check, false);
-  if is_error(manifest); then return manifest; fi
+  // Manifest path ownership must be admitted before changing any adapter.
+  // In particular, a hand-authored manifest cannot cause partial generation.
   if kind == "all"; then
     val parent = root + "/generated";
     if fs.is_symlink(parent); then return error("generated manifest parent is symlink"); fi
     if fs.exists(parent), !fs.is_dir(parent); then
       return error("generated manifest parent is not a directory");
     fi
-    if !fs.exists(parent), !check; then fs.mkdir_all(parent); fi
+    if fs.exists(parent); then
+      val existing = sync_one(parent + "/route-manifest.json", inspected, check, true);
+      if is_error(existing); then return existing; fi
+    else
+      if check; then return error("missing generated output: " + parent); fi
+    fi
+  fi
+
+  // Phase 2: verify or materialize byte-stable Oreslang adapters.
+  val manifest = route_manifest(root, role, kind, check, false);
+  if is_error(manifest); then return manifest; fi
+  if kind == "all"; then
+    val parent = root + "/generated";
+    if !fs.exists(parent); then fs.mkdir_all(parent); fi
     val state = sync_one(parent + "/route-manifest.json", manifest, check, false);
     if is_error(state); then return state; fi
   fi
