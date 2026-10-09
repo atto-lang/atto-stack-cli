@@ -20,7 +20,10 @@ if [[ "$1" == --allow-env=* ]]; then
     exit 0
   fi
   case "$ORESLANG_STACK_COMMAND" in
-    dev|build|check) printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$ORESLANG_STACK_COMMAND" ;;
+    dev|build|check)
+      mkdir -p "$ORESLANG_STACK_ROOT/generated"
+      printf '{"schema": "oreslang.stack.inventory/v1"}\n' > "$ORESLANG_STACK_ROOT/generated/route-manifest.json"
+      printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$ORESLANG_STACK_COMMAND" ;;
     routes) printf 'ORESLANG_STACK_JSON_v1:{"schema":"oreslang.stack.inventory/v1"}\n' ;;
     generate) printf 'ORESLANG_STACK_ACTION_v1:generated\n' ;;
     deploy) printf 'ERROR: deployment denied\n' ;;
