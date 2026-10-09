@@ -209,8 +209,10 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
   val lambda = GENERATED + "// Web Lambda adapter; server supplies request/response transport.\n" +
     "import module page from \"./page\";\n\n" +
     "pub fnc invoke_page(String request) -> String {\n  return page." + renderer + "(request);\n}\n";
-  val status = sync_one(dir + "/lambda.ores", lambda, check, dry);
-  if is_error(status); then return status; fi
+  if kind == "all" | kind == "lambda"; then
+    val status = sync_one(dir + "/lambda.ores", lambda, check, dry);
+    if is_error(status); then return status; fi
+  fi
   return "@J|{\"kind\":\"page\",\"path\":" + quote_json(url) +
     ",\"handler\":" + quote_json(renderer) +
     ",\"source\":" + quote_json(dir.replace_literal(root + "/", "") + "/page.ores") + "}\n";
@@ -348,7 +350,9 @@ fnc admission(String root, String entry, String action): String {
     return error("missing or symlinked Oreslang application entrypoint");
   fi
   if action == "routes"; then
-    return route_manifest(root, role, "all", false, true);
+    // Source inventory is intentionally independent of previously generated
+    // adapters. This action needs no write capability.
+    return route_manifest(root, role, "routes", false, true);
   fi
   if action == "deploy"; then
     return error("deploy denied: no certified compiler artifact or host adapter");
