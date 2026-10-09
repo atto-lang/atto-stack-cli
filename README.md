@@ -16,6 +16,8 @@ or generate source adapters.
 ```bash
 oreslang-stack init --root /path/to/new-api-repo --role api
 oreslang-stack init --root /path/to/new-web-repo --role web
+oreslang-stack init --root /path/to/new-infra-repo --role infra
+oreslang-stack init --root /path/to/new-lambdas-repo --role lambdas
 oreslang-stack dev --root examples/hello-api
 oreslang-stack routes --root examples/hello-api
 oreslang-stack generate --kind all --root examples/hello-api
@@ -27,7 +29,7 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 
 | Command | Behavior |
 |---|---|
-| `init` | Oreslang-native generation of fresh API/web project sources and canonical adapters; refuses existing `src/`, `generated/`, or project manifests |\n| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
+| `init` | Oreslang-native fresh API/web sources and candidate-only infra/Lambda scaffolds; refuses existing `src/`, `generated/`, or project manifests |\n| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
@@ -50,6 +52,10 @@ oreslang-stack build --root .
 `init` is intentionally non-destructive: a preexisting `oreslang-stack.toml`, `src/` or `generated/` is a hard refusal, **not** an invitation to migrate existing code. It creates a minimal route/page, entrypoint, role manifest and generated adapters via native Oreslang and compiler-checks the result. It does not provision GitHub repositories, authenticate to an organization, build a native binary, certify deploy, or imply that the generated route is a running HTTP server.
 
 All filesystem writes are scoped to the selected repository. Project initialization is not a single atomic transaction across multiple files; if the actual compiler/generator fails after creating output, inspect it before retrying rather than overwriting any authored work.
+
+## Infra and Lambda repositories
+
+`infra` and `lambdas` have a separate fail-closed candidate profile. `init` creates source-only examples and explicit `deployable = false` manifests. `check` typechecks their sources but **does not** run cloud deployments or create AWS Lambda bootstraps; `routes`, `generate`, `dev`, `build`, and `deploy` are denied for these two roles. See [the infra/Lambda admission guide](docs/INFRA_LAMBDAS.md) for actual provider and runtime requirements.
 
 ## Source layout
 
