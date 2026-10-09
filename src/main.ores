@@ -371,7 +371,7 @@ fnc init_project(String root, String entry, String role): String {
   if entry != "src/main.ores"; then
     return error("init requires the default src/main.ores entrypoint");
   fi
-  if role != "api" & role != "admin-api" & role != "web" & role != "admin-web"; then
+  if role != "api", role != "admin-api", role != "web", role != "admin-web"; then
     return error("init expects --role api|admin-api|web|admin-web");
   fi
   val String manifest = root + "/oreslang-stack.toml";
