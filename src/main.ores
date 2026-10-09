@@ -147,9 +147,9 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
     if fields.size != 5 | fields[0] != "//" | fields[1] != "@ores-route"; then
       return error("invalid route annotation: " + path);
     fi
-    val method = fields[2];
-    val declared = fields[3];
-    val symbol = fields[4];
+    val String method = fields[2];
+    val String declared = fields[3];
+    val String symbol = fields[4];
     if !http_method(method) | declared != url | !symbol.is_identifier(); then
       return error("invalid HTTP method, path or handler: " + line);
     fi
