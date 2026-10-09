@@ -40,7 +40,7 @@ handling, or performance at large source-tree scale.
 2. Build previously moved the source archive twice, failing after the first
    rename. There is now only one final rename.
 3. Project sources were copied without an explicit allowlist. Bundle staging
-   now includes only `.ores` source, the project/compiler manifests,
+   now includes only `.ores` source, the project manifest,
    route inventory, exact entrypoint receipt, and source runner; `.env` and
    unrelated workspace files cannot be copied through the default pipeline.
 4. Runtime-generated artifacts were overwritten by truncation; the stdlib now
@@ -68,6 +68,27 @@ handling, or performance at large source-tree scale.
     declarations, and the full generated import graph passes compilation.
 12. The stdlib now exposes literal-string tokenization, validation and
     filesystem enumeration through capability-scoped Oreslang APIs.
+
+## Follow-up hardening (PR #8, 2026-10-09)
+
+The current draft branch, pending exact-head Java/Graal execution, adds:
+
+- Top-level and nested route-role exclusivity: incompatible `pages` and
+  `routes` trees cannot be silently ignored by inventory and generation.
+- File-type validation for the project manifest, sources, handlers, generated
+  targets, and entrypoints, including directory collision refusals.
+- Source-bundle runner validation of physical entrypoint parent paths and
+  lexical traversal/double-separator components, preventing entrypoint
+  redirection outside the extracted `src` directory through a symlink.
+- The distributable source bundle excludes `.oreslangc.cfg.toml` by
+  default; local compiler configuration may contain credentials and private
+  paths. Runtime config must be supplied separately.
+- Negative regression coverage for fail-closed cases and no-write preflight
+  properties. These cases have not yet passed a real Oreslang test run.
+
+**Do not carry forward the earlier passing audit runs as PR #8 validation.**
+PR #8 must remain draft until its exact head executes real Java/Graal
+compiler and end-to-end checks.
 
 ## Remaining security and product constraints
 
