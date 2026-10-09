@@ -61,9 +61,9 @@ All filesystem writes are scoped to the selected repository. Project initializat
 
 The project declares the role in `oreslang-stack.toml` as
 `api`, `admin-api`, `web` or `admin-web`. API repositories author
-`src/routes/**/route.ores` with sibling `handlers.ores` and
+`src/routes/rest/**/route.ores` with sibling `handlers.ores` and
 `// @ores-route GET /users/{id} show` annotations. Web repositories author
-`src/pages/**/page.ores` with `// @ores-page /users/{id} render`.
+`src/pages/root/**/page.ores` with `// @ores-page /users/{id} render`.
 Generated API routes have `rpc.ores` and `lambda.ores`, while web pages
 receive only `lambda.ores`.
 
