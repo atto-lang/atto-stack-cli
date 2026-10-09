@@ -1,0 +1,4 @@
+pub routine main(): void {
+  stdio.println("beta-v1");
+  return;
+}

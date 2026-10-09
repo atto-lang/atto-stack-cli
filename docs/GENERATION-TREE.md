@@ -1,0 +1,115 @@
+# Generation tree (grandaddy → daddy → child)
+
+Both CLIs share **the same** opt-in POSIX/loopback generation supervisor:
+bin/generation-tree.py, implementing ores.dev.generations/v1.
+
+It is **not** conventional "reload browser" or "restart the HTTP server".
+Grandaddy is the long-running frontend HTTP listener. Daddy is a
+separate middleware HTTP process. Each route folder owns a separate HTTP
+worker. Every request flows grandaddy → daddy → child.
+
+## Run
+
+Oreslang:
+
+    ORESLANG_BIN=/path/to/oreslang oreslang-stack dev --generation-tree --root examples/generation-tree-oreslang
+    curl -i http://127.0.0.1:18551/alpha
+
+Rust:
+
+    ores-stack dev --generation-tree --root examples/generation-tree-rust
+    curl -i http://127.0.0.1:18552/alpha
+
+Python 3, a POSIX host, the configured worker commands and the language
+toolchain are required. The supplied examples use the explicitly labeled
+test-only source-worker fixture, which compiles/executes small stand-alone
+Rust/Oreslang source units at startup. Replace the test fixture with a real
+HTTP actor/route worker for deployment-oriented integration.
+
+## Contract
+
+Create dev-tree.json in the project root:
+
+    {
+      "schema": "ores.dev.generations/v1",
+      "port": 18551,
+      "middleware": "src/middleware",
+      "routes": [
+        {
+          "path": "/alpha",
+          "dir": "src/routes/alpha",
+          "argv": ["python3", "tools/my-http-route-worker.py", "--port", "{port}", "--root", "{root}", "--source-dir", "{source_dir}"]
+        }
+      ],
+      "daddy_argv": ["python3", "tools/my-http-middleware.py", "--port", "{port}"]
+    }
+
+The worker commands are executable argv arrays, **not shell strings**.
+Host arguments recognize {port}, {root} and {source_dir} placeholders.
+Every spawned worker receives ORES_DEV_PORT, ORES_DEV_HEALTH_TOKEN and
+ORES_DEV_ROOT. It must listen on 127.0.0.1:ORES_DEV_PORT; return exact
+HTTP 200 /__ores_health with body OK when given X-Ores-Dev-Token; and
+accept the token on proxied requests. The middleware must forward to
+X-Ores-Dev-Target-Port over loopback. Its port/target header is internal;
+do not expose these private worker endpoints publicly.
+
+The fixture_echo:true setting is **testing only**. It returns source-file
+text without executing any Rust or Oreslang code; it must not be
+treated as real code hot loading. Production worker mode refuses startup
+without explicit daddy_argv and per-route argv.
+
+## Proof obligations
+
+Our CI tests send real HTTP requests, track X-Ores-Grandaddy-PID,
+X-Ores-Daddy-PID, and X-Ores-Child-PID and enforce:
+
+1. Grandaddy PID and TCP listener remain stable throughout the test.
+2. Editing one source file in a route folder replaces just its child,
+   not daddy or sibling children.
+3. Editing a file in middleware replaces daddy only; existing route
+   children retain their PIDs.
+4. Invalid Rust/Oreslang source refuses replacement and keeps the
+   previous healthy child serving; fixing source admits a new child.
+5. The child source unit is actually compiled/executed, not echoed;
+   response body and middleware header change after valid source edits.
+6. Unknown routes return 404 and symlinked sources are rejected.
+
+Polling is content-hashed, with 150 ms poll and 300 ms stabilization.
+Each worker must become healthy before its replacement is admitted;
+old generations are retired after a short grace period. A 502 may still
+occur for an in-flight request: **no zero-downtime SLA is claimed**.
+Route snapshots cover direct route-folder files; middleware snapshots
+cover its subtree.
+
+## Audit boundaries and parity gaps
+
+This is a developer-local, explicitly opted-in process supervisor.
+It binds the grandaddy to 127.0.0.1 only and requires POSIX process groups.
+It is not a secure multi-tenant sandbox, remote hot-code loader, or
+network-facing reverse proxy. Workers are trusted local user commands.
+Mutable-tree TOCTOU races, request-drain handoffs, token exposure to
+local processes, worker health churn, and dynamic configuration migration
+remain future hardening work.
+
+Oreslang HTTP examples:
+- https://github.com/ores-truffle-oreslang/oreslang-demo-restful-server
+- https://github.com/ores-truffle-oreslang/oreslang-http-routing
+- https://github.com/ores-truffle-oreslang/oreslang-demos
+
+The existing REST demo uses method sources such as
+src/routes/rest/health/get.ores and a startup-generated central
+registry. This first generation-tree contract deliberately requires
+route.ores / route.rs per worker folder and explicit worker commands.
+It does **not** hot-swap actors inside that existing server or rewire
+its generated route registry. That needs a separate runtime ABI and
+integration test.
+
+For built artifact parity, the Rust stack has Cargo binaries and more
+mature TypeSpec/GraphQL/RPC and deployment receipt machinery. The
+Oreslang CLI currently creates compiler-checked source distributions
+rather than a general standalone guest-code binary. The REST demo has
+its *own* working GraalVM native-image build (AOT runtime with embedded
+Oreslang sources); that has not yet been generalized into oreslang-stack
+build. A managed deployment adapter, typed transport parity, and
+in-VM OTP actor hot swapping remain **unfinished**, and unsupported
+operations must continue to fail closed.

@@ -1,0 +1,45 @@
+{
+  "schema": "ores.dev.generations/v1",
+  "port": 18551,
+  "middleware": "src/middleware",
+  "daddy_argv": [
+    "python3",
+    "../../tests/source_worker_fixture.py",
+    "--mode",
+    "daddy",
+    "--language",
+    "oreslang",
+    "--source",
+    "{source_dir}/middleware.ores"
+  ],
+  "routes": [
+    {
+      "path": "/alpha",
+      "dir": "src/routes/alpha",
+      "argv": [
+        "python3",
+        "../../tests/source_worker_fixture.py",
+        "--mode",
+        "child",
+        "--language",
+        "oreslang",
+        "--source",
+        "{source_dir}/route.ores"
+      ]
+    },
+    {
+      "path": "/beta",
+      "dir": "src/routes/beta",
+      "argv": [
+        "python3",
+        "../../tests/source_worker_fixture.py",
+        "--mode",
+        "child",
+        "--language",
+        "oreslang",
+        "--source",
+        "{source_dir}/route.ores"
+      ]
+    }
+  ]
+}
