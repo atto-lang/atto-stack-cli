@@ -144,15 +144,21 @@ case "$action" in
       echo "oreslang-stack: project compiler manifest symlink refused" >&2
       exit 1
     fi
+    # Include the real generated route inventory and a runtime-dependent
+    # Oreslang launcher. This is a runnable source distribution, NOT a native binary.
+    if [[ ! -s "$root/generated/route-manifest.json" ]]; then
+      echo "oreslang-stack: missing generated route manifest" >&2
+      exit 1
+    fi
     if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
-      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml .oreslangc.cfg.toml
+      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml .oreslangc.cfg.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
     else
-      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml
+      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml generated/route-manifest.json -C "$cli_home" bin/oreslang-stack-run
     fi
     mv -f -- "$tmp" "$artifact"
     trap - EXIT
     printf 'Oreslang checked source bundle: %s\n' "$artifact"
-    printf '%s\n' 'This is NOT a compiled, runnable, or deployable artifact.'
+    printf '%s\n' 'This is NOT a compiled native artifact. Unpack and use bin/oreslang-stack-run with a Java/Graal Oreslang runtime.'
     ;;
   *)
     echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
