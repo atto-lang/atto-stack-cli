@@ -14,44 +14,47 @@ if "$cli" generate --kind all --root "$tmp/manifest-collision"; then
   echo "foreign route manifest must fail before writing any adapters" >&2
   exit 1
 fi
-test ! -e "$tmp/manifest-collision/src/routes/rpc.ores"
-test ! -e "$tmp/manifest-collision/src/routes/lambda.ores"
+test ! -e "$tmp/manifest-collision/src/routes/rest/rpc.ores"
+test ! -e "$tmp/manifest-collision/src/routes/rest/lambda.ores"
+# --root defaults to '.' (parsed by canonical flags-2-env).
+( cd "$tmp/api" && "$cli" routes | grep -F '"kind":"route"' )
+( cd "$tmp/api" && "$cli" routes --root=. | grep -F '"kind":"route"' )
 "$cli" generate --kind all --root "$tmp/api"
 "$cli" generate --kind all --check --root "$tmp/api"
 "$cli" check --root "$tmp/api"
 "$cli" routes --root "$tmp/api" | grep -F '"kind":"route"'
-grep -F 'route.greet(request)' "$tmp/api/src/routes/rpc.ores"
-grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/lambda.ores"
-grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/graphql.ores"
-grep -F 'type Query' "$tmp/api/src/routes/graphql.graphql"
+grep -F 'route.greet(request)' "$tmp/api/src/routes/rest/rpc.ores"
+grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/rest/lambda.ores"
+grep -F 'rpc.rpc_greet(request)' "$tmp/api/src/routes/rest/graphql.ores"
+grep -F 'type Query' "$tmp/api/src/routes/rest/graphql.graphql"
 "$cli" generate --kind graphql --check --root "$tmp/api"
 grep -F 'oreslang.stack.inventory/v1' "$tmp/api/generated/route-manifest.json"
 "$cli" build --root "$tmp/api"
 test -s "$tmp/api/dist/oreslang-stack-source.tar.gz"
 tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslang-stack-run"
 tar -tzf "$tmp/api/dist/oreslang-stack-source.tar.gz" | grep -F "generated/route-manifest.json"
-printf '\n// deliberately stale\n' >> "$tmp/api/src/routes/rpc.ores"
+printf '\n// deliberately stale\n' >> "$tmp/api/src/routes/rest/rpc.ores"
 if "$cli" generate --kind all --check --root "$tmp/api"; then
   echo "stale generated file must fail verification" >&2
   exit 1
 fi
 "$cli" generate --kind all --root "$tmp/api"
-printf 'hand authored\n' > "$tmp/api/src/routes/rpc.ores"
+printf 'hand authored\n' > "$tmp/api/src/routes/rest/rpc.ores"
 if "$cli" generate --kind all --root "$tmp/api"; then
   echo "hand-authored file must not be overwritten" >&2
   exit 1
 fi
 "$cli" generate --kind all --root "$tmp/web"
 "$cli" generate --kind all --check --root "$tmp/web"
-test -f "$tmp/web/src/pages/lambda.ores"
-test ! -e "$tmp/web/src/pages/rpc.ores"
+test -f "$tmp/web/src/pages/root/lambda.ores"
+test ! -e "$tmp/web/src/pages/root/rpc.ores"
 if "$cli" generate --kind rpc --root "$tmp/web"; then
   echo "web repositories do not generate RPC" >&2
   exit 1
 fi
-mkdir -p "$tmp/api/src/routes/users/[id]" "$tmp/api/src/routes/users/[name]"
+mkdir -p "$tmp/api/src/routes/rest/users/[id]" "$tmp/api/src/routes/rest/users/[name]"
 for param in id name; do
-  dir="$tmp/api/src/routes/users/[$param]"
+  dir="$tmp/api/src/routes/rest/users/[$param]"
   printf 'pub fnc show(String request) -> String { return request; }\n' > "$dir/handlers.ores"
   printf '// @ores-route GET /users/{%s} show\nimport module handlers from "./handlers";\npub fnc show(String request) -> String { return handlers.show(request); }\n' "$param" > "$dir/route.ores"
 done
@@ -70,8 +73,8 @@ fi
 # Additional adversarial source-tree, permission and idempotency coverage.
 cp -R "$repo/examples/hello-api" "$tmp/inventory-only"
 "$cli" routes --root "$tmp/inventory-only" | grep -F '"kind":"route"'
-test ! -e "$tmp/inventory-only/src/routes/rpc.ores"
-test ! -e "$tmp/inventory-only/src/routes/lambda.ores"
+test ! -e "$tmp/inventory-only/src/routes/rest/rpc.ores"
+test ! -e "$tmp/inventory-only/src/routes/rest/lambda.ores"
 test ! -e "$tmp/inventory-only/generated"
 
 cp -R "$repo/examples/hello-api" "$tmp/invalid-role"
@@ -80,19 +83,19 @@ if "$cli" generate --kind all --root "$tmp/invalid-role"; then
   echo "invalid repository roles must be rejected" >&2
   exit 1
 fi
-test ! -e "$tmp/invalid-role/src/routes/rpc.ores"
+test ! -e "$tmp/invalid-role/src/routes/rest/rpc.ores"
 
 cp -R "$repo/examples/hello-api" "$tmp/duplicate-verb"
-printf '\n// @ores-route GET / greet\n' >> "$tmp/duplicate-verb/src/routes/route.ores"
+printf '\n// @ores-route GET / greet\n' >> "$tmp/duplicate-verb/src/routes/rest/route.ores"
 if "$cli" generate --kind all --root "$tmp/duplicate-verb"; then
   echo "duplicate route method must be rejected" >&2
   exit 1
 fi
-test ! -e "$tmp/duplicate-verb/src/routes/rpc.ores"
+test ! -e "$tmp/duplicate-verb/src/routes/rest/rpc.ores"
 
 cp -R "$repo/examples/hello-api" "$tmp/symlink-attack"
 mkdir -p "$tmp/outside"
-ln -s "$tmp/outside" "$tmp/symlink-attack/src/routes/external"
+ln -s "$tmp/outside" "$tmp/symlink-attack/src/routes/rest/external"
 if "$cli" generate --kind all --root "$tmp/symlink-attack"; then
   echo "symlinked route directory must be rejected" >&2
   exit 1
@@ -101,7 +104,7 @@ test ! -e "$tmp/outside/rpc.ores"
 test ! -e "$tmp/outside/lambda.ores"
 
 cp -R "$repo/examples/hello-api" "$tmp/target-link"
-ln -s "$tmp/outside/adapter.ores" "$tmp/target-link/src/routes/rpc.ores"
+ln -s "$tmp/outside/adapter.ores" "$tmp/target-link/src/routes/rest/rpc.ores"
 if "$cli" generate --kind all --root "$tmp/target-link"; then
   echo "symlinked generator target must be rejected" >&2
   exit 1
@@ -109,17 +112,17 @@ fi
 test ! -e "$tmp/outside/adapter.ores"
 
 cp -R "$repo/examples/hello-api" "$tmp/orphan-adapter"
-mkdir -p "$tmp/orphan-adapter/src/routes/unused"
-printf '// @generated by oreslang-stack-cli; DO NOT EDIT.\n' > "$tmp/orphan-adapter/src/routes/unused/rpc.ores"
+mkdir -p "$tmp/orphan-adapter/src/routes/rest/unused"
+printf '// @generated by oreslang-stack-cli; DO NOT EDIT.\n' > "$tmp/orphan-adapter/src/routes/rest/unused/rpc.ores"
 if "$cli" generate --kind all --check --root "$tmp/orphan-adapter"; then
   echo "orphan adapter must fail read-only check" >&2
   exit 1
 fi
 "$cli" generate --kind all --root "$tmp/orphan-adapter"
-test ! -e "$tmp/orphan-adapter/src/routes/unused/rpc.ores"
-sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/routes/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/before.sha"
+test ! -e "$tmp/orphan-adapter/src/routes/rest/unused/rpc.ores"
+sha256sum "$tmp/orphan-adapter/src/routes/rest/rpc.ores" "$tmp/orphan-adapter/src/routes/rest/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/before.sha"
 "$cli" generate --kind all --root "$tmp/orphan-adapter"
-sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/routes/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/after.sha"
+sha256sum "$tmp/orphan-adapter/src/routes/rest/rpc.ores" "$tmp/orphan-adapter/src/routes/rest/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/after.sha"
 cmp "$tmp/before.sha" "$tmp/after.sha"
 
 # New-org adoption: exercise every supported role with the real runtime.
@@ -134,16 +137,16 @@ for role in api admin-api web admin-web; do
   "$cli" check --root "$root"
   "$cli" routes --root "$root" | grep -F "\"role\": \"$role\""
   if [[ "$role" == api || "$role" == admin-api ]]; then
-    test -f "$root/src/routes/route.ores"
-    test -f "$root/src/routes/handlers.ores"
-    test -f "$root/src/routes/rpc.ores"
-    test -f "$root/src/routes/lambda.ores"
-    test -f "$root/src/routes/graphql.ores"
-    test -f "$root/src/routes/graphql.graphql"
+    test -f "$root/src/routes/rest/route.ores"
+    test -f "$root/src/routes/rest/handlers.ores"
+    test -f "$root/src/routes/rest/rpc.ores"
+    test -f "$root/src/routes/rest/lambda.ores"
+    test -f "$root/src/routes/rest/graphql.ores"
+    test -f "$root/src/routes/rest/graphql.graphql"
   else
-    test -f "$root/src/pages/page.ores"
-    test -f "$root/src/pages/lambda.ores"
-    test ! -e "$root/src/pages/rpc.ores"
+    test -f "$root/src/pages/root/page.ores"
+    test -f "$root/src/pages/root/lambda.ores"
+    test ! -e "$root/src/pages/root/rpc.ores"
   fi
   if "$cli" init --root "$root" --role "$role"; then
     echo "second init must refuse existing $role tree" >&2
@@ -264,7 +267,7 @@ if "$cli" generate --kind all --root "$tmp/duplicate-section"; then
   echo "duplicate repository section must not generate sources" >&2
   exit 1
 fi
-test ! -e "$tmp/duplicate-section/src/routes/rpc.ores"
+test ! -e "$tmp/duplicate-section/src/routes/rest/rpc.ores"
 
 # Missing candidate source or symlinked candidate manifest cannot pass check.
 for role in infra lambdas; do
