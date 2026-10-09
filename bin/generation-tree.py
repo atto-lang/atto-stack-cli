@@ -119,23 +119,36 @@ def ephemeral_port():
         return s.getsockname()[1]
 
 def stop(proc):
-    if proc is None or proc.poll() is not None:
+    if proc is None:
         return
-    try:
-        if os.name == "posix":
-            os.killpg(proc.pid, signal.SIGTERM)
-        else:
-            proc.terminate()
-        proc.wait(timeout=2)
-    except (OSError, subprocess.TimeoutExpired):
+    # The group leader may have already exited while an owned grandchild
+    # is still alive. Never treat proc.poll() as proof that its group died.
+    if os.name == "posix":
         try:
-            if os.name == "posix":
-                os.killpg(proc.pid, signal.SIGKILL)
-            else:
-                proc.kill()
-            proc.wait(timeout=2)
-        except (OSError, subprocess.TimeoutExpired):
+            os.killpg(proc.pid, signal.SIGTERM)
+        except ProcessLookupError:
             pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+        # Descendants may ignore TERM even if the leader exited.
+        time.sleep(.05)
+        try:
+            os.killpg(proc.pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+        try:
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            pass
+    elif proc.poll() is None:
+        try:
+            proc.terminate()
+            proc.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait(timeout=2)
 
 def await_ready(port, proc, token):
     # Compiling cold Rust or Graal workers can exceed a 3-second probe window.
@@ -355,6 +368,9 @@ def monitor(state, script, root, middleware, routes, fixture):
                 if key == "daddy":
                     new = spawn_worker(script, root, None if fixture else state["daddy_argv"],
                                        "daddy", after, state["token"], middleware)
+                    if state["stop"].is_set():
+                        stop(new[0])
+                        return
                     with state["lock"]:
                         old = state["daddy"]
                         state["daddy"] = new
@@ -365,6 +381,9 @@ def monitor(state, script, root, middleware, routes, fixture):
                     marker = (root / row["dir"] / leaf).read_text()[:256].strip() if fixture else row["dir"]
                     new = spawn_worker(script, root, None if fixture else row["argv"],
                                        "child", marker, state["token"], row["dir"])
+                    if state["stop"].is_set():
+                        stop(new[0])
+                        return
                     with state["lock"]:
                         old = state["children"][key]
                         state["children"][key] = new
