@@ -86,3 +86,9 @@ A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
 still experimental and is not usable as the CLI runtime. This PR must remain
 draft until Java/Graal integration tests and the stdlib dependency are green.
+
+## Three-generation development mode (opt-in)
+
+`dev --generation-tree --root PROJECT` starts a loopback-only persistent grandaddy HTTP gateway, a middleware daddy worker, and separately supervised route children. Route-folder edits replace only the affected child; middleware edits replace daddy. Invalid source leaves the previously admitted generation serving. See [Generation Tree](docs/GENERATION-TREE.md) and [feature-parity audit](docs/FEATURE-PARITY.md).
+
+This is developer-local, process-level reload. The demo's in-VM Oreslang actor hot swapping, a general Oreslang compiled binary pipeline, typed transport parity, and working Oreslang deploy targets are **not yet implemented**.
