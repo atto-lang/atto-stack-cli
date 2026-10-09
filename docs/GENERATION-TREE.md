@@ -127,3 +127,44 @@ Oreslang sources); that has not yet been generalized into oreslang-stack
 build. A managed deployment adapter, typed transport parity, and
 in-VM OTP actor hot swapping remain **unfinished**, and unsupported
 operations must continue to fail closed.
+
+
+## Additional security audit — October 2026
+
+The opt-in development server now has regression tests for:
+
+- **HTTP admission and proxy isolation:** rejects transfer-encoded or
+  ambiguous-content-length requests and non-origin-form targets. Removes
+  request and response hop-by-hop headers, including fields named by
+  `Connection`. Never exposes upstream `X-Ores-Dev-*` internal headers.
+- **Bounded local HTTP workload:** at most 64 simultaneously admitted
+  connections per host, 5-second accepted-socket timeout, 256 KiB incoming
+  request body and 1 MiB upstream response body limits.
+- **Subprocess least privilege:** workers inherit a fixed toolchain-environment
+  allowlist, not arbitrary credentials in the grandaddy environment. This
+  is *not* a sandbox; workers retain the launching user's filesystem access.
+- **Safe source snapshots:** bounded regular-file reads from no-follow file
+  descriptors, symlink/invalid source rejection, per-file 4 MiB size cap,
+  and 4,000-file inventory cap. Parent directory races cannot be excluded
+  completely without directory-FD-pinned tree snapshots.
+- **Generation fencing:** after a replacement is healthy, compare its
+  watched-source digest again immediately before admission. A source edit
+  during compilation discards that candidate without replacing the healthy
+  generation.
+- **Lifecycle cleanup:** POSIX process groups are terminated even if their
+  group leader has already exited. Workers finishing admission after shutdown
+  are immediately stopped instead of being promoted.
+
+Security tests live in `tests/test_proxy_security.py`,
+`tests/test_process_tree_security.py`, and
+`tests/test_source_snapshot_security.py`; real HTTP and source-execution
+tests remain in the generation-tree test suites.
+
+**Important remaining limitations:** a local trusted development tool,
+not an authenticated public reverse proxy; no adversarial tenant isolation;
+worker health endpoints rely on a process-local bearer value; no guaranteed
+graceful request drain or rollback transaction across middleware and routes.
+Full Rust workspace Cargo builds currently depend on private Git repositories
+and need a credential-free dependency mirror to validate in CI. Native
+GraalVM compilation of every Oreslang guest handler and production deployment
+are still not implemented by this CLI feature.
