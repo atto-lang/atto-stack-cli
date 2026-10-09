@@ -33,3 +33,7 @@ For web or admin-web, do not declare \`@ores-route\` or generate \`rpc.ores\`. T
 - Generated \`rpc.ores\` and \`lambda.ores\` are only synchronized when their direct source authorities pass discovery checks. Filesystem symlinks and path ambiguities fail closed.
 - \`check\` invokes the actual configured \`oreslang check\` compiler command on discovered Oreslang files. The CLI only asserts compiler approval if that invocation succeeded. The compiler may not yet accept the scaffold ABI or module import paths; CI only checks the host CLI/source-level contract, not language runtime proof.
 - Native \`oreslang-http-routing\`, \`oreslang-rpc\`, and \`oreslang-ssr\` are separate **Oreslang-written** libraries. The eventual artifact generator must link them under exact, tested revisions; this initial transport-neutral boundary makes no claim that typed adapters are complete.
+
+## LiteGraph / LLVM capability
+
+`litegraph` is a **planned** sixth target for Oreslang because the language has an LLVM backend path. A generic LLVM build is insufficient as proof of LiteGraph GPU execution: the target-specific ABI, supported runtime/device capabilities, host adapter, artifact format, and deployment lifecycle each need verification. The CLI's `plan --target litegraph` must report `deployable: false` until those gates are admitted. BEAM and Pony remain out of scope.
