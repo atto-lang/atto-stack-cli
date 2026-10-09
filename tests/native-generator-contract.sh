@@ -191,4 +191,31 @@ expect_rejected "repository role manifest as directory" "project manifest must b
   generate --kind all --root "$tmp/role-is-directory"
 test ! -e "$tmp/role-is-directory/src/routes/rpc.ores"
 
+# A role cannot silently ignore the alternate top-level source tree.
+cp -R "$repo/examples/hello-api" "$tmp/api-extra-pages"
+mkdir -p "$tmp/api-extra-pages/src/pages"
+expect_rejected "API with alternate pages source root" "source role mismatch" \
+  generate --kind all --root "$tmp/api-extra-pages"
+test ! -e "$tmp/api-extra-pages/src/routes/rpc.ores"
+test ! -e "$tmp/api-extra-pages/generated"
+
+cp -R "$repo/examples/hello-web" "$tmp/web-extra-routes"
+mkdir -p "$tmp/web-extra-routes/src/routes"
+expect_rejected "web with alternate routes source root" "source role mismatch" \
+  routes --root "$tmp/web-extra-routes"
+test ! -e "$tmp/web-extra-routes/generated"
+
+cp -R "$repo/examples/hello-api" "$tmp/api-extra-root-link"
+ln -s "$tmp/outside" "$tmp/api-extra-root-link/src/pages"
+expect_rejected "API with linked alternate pages source root" "source role mismatch" \
+  generate --kind all --root "$tmp/api-extra-root-link"
+test ! -e "$tmp/api-extra-root-link/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/entry-is-directory"
+rm "$tmp/entry-is-directory/src/main.ores"
+mkdir "$tmp/entry-is-directory/src/main.ores"
+expect_rejected "entrypoint as a directory" "entrypoint must be a regular file" \
+  generate --kind all --root "$tmp/entry-is-directory"
+test ! -e "$tmp/entry-is-directory/src/routes/rpc.ores"
+
 echo "native Oreslang generator integration checks passed"
