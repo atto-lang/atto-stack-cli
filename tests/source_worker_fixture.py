@@ -23,7 +23,7 @@ def execute_source(source, language):
     if language == "rust":
         with tempfile.TemporaryDirectory(prefix="ores-dev-rust-worker-") as tmp:
             executable = pathlib.Path(tmp) / "route-worker"
-            build = subprocess.run(["rustc", "--edition=2024", "-O", str(source),
+            build = subprocess.run(["rustc", "--edition=2024", str(source),
                                     "-o", str(executable)], capture_output=True,
                                    text=True, timeout=90)
             if build.returncode:
