@@ -281,6 +281,10 @@ def monitor(state, script, root, middleware, routes, fixture):
                 continue
             intended = (after, dead)
             if key not in pending or pending[key][0] != intended:
+                # A new source digest gets a fresh admission budget even if
+                # the previous source repeatedly failed compilation.
+                if before != after and (key not in pending or pending[key][0][0] != after):
+                    restart_history[key] = []
                 pending[key] = (intended, now)
                 continue
             if now - pending[key][1] < .3:
