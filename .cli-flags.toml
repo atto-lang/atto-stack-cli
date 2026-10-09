@@ -42,7 +42,7 @@ help = "Initialize a new Oreslang API or web stack without replacing existing fi
 env = "ORESLANG_STACK_ROLE"
 aliases = ["role"]
 type = "string"
-help = "Required stack role: api, admin-api, web or admin-web."
+help = "Required stack role: api, admin-api, web, admin-web, infra, or lambdas (candidate-only)."
 
 [commands.routes]
 env = "ORESLANG_STACK_COMMAND_ROUTES"
