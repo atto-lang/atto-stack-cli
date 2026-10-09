@@ -64,6 +64,13 @@ if [[ "${ORESLANG_STACK_POSITIONALS:-}" != '["oreslang-stack"]' ]]; then
   echo "oreslang-stack: unrecognized positional arguments" >&2
   exit 2
 fi
+# flags2env exposes unknown options in its structured errors channel; the
+# shell-env command itself can succeed while that collection is nonempty.
+if [[ "${ORESLANG_STACK_UNKNOWN_OPTIONS:-[]}" != "[]" ||
+      "${ORESLANG_STACK_PARSE_ERRORS:-[]}" != "[]" ]]; then
+  echo "oreslang-stack: unknown options or flag parsing errors" >&2
+  exit 2
+fi
 export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
