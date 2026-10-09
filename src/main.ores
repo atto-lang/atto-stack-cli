@@ -449,17 +449,17 @@ pub routine main(): void {
   val String entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
   val String backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
 
-  if command == "init"; then
-    val String role = env.get("ORESLANG_STACK_ROLE").unwrap();
-    stdio.println(init_project(root, entry, role));
-    return;
-  fi
   if command == "deploy"; then
     stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
     return;
   fi
   if backend != "graal"; then
     stdio.println(error("LLVM backend is not ready for this CLI"));
+    return;
+  fi
+  if command == "init"; then
+    val String role = env.get("ORESLANG_STACK_ROLE").unwrap();
+    stdio.println(init_project(root, entry, role));
     return;
   fi
   val String result = admission(root, entry, command);
