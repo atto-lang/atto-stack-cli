@@ -41,6 +41,10 @@ The project declares the role in `oreslang-stack.toml` as
 `src/pages/**/page.ores` with `// @ores-page /users/{id} render`.
 Generated API routes have `rpc.ores` and `lambda.ores`, while web pages
 receive only `lambda.ores`.
+The selected role is exclusive: an API repository cannot also contain
+`src/pages`, and a web repository cannot also contain `src/routes`.
+The CLI refuses conflicting trees, invalid directory-valued source files and
+non-file entrypoints instead of silently omitting them.
 
 The original Rust proof-of-concept forwarded String requests/responses. This
 native Oreslang port maintains that **source adapter envelope** for parity;
@@ -53,6 +57,15 @@ route shapes (`[id]` vs `[name]`), orphan adapters, symlinks, role mismatches,
 missing handler functions and stale output. Generation performs a read-only
 validation phase before materializing files; the filesystem APIs are **not
 race-free openat handles**, so hostile mutable project trees are not supported.
+
+Source distributions include checked `.ores` files, the repository role manifest,
+generated route inventory, and a runtime-dependent entrypoint. Project-local
+`.oreslangc.cfg.toml` is intentionally excluded from archives because it may
+contain secrets or machine-local paths; arrange any required non-secret runtime
+configuration separately. The bundled runner validates the entrypoint and its
+physical parent path before execution. Neither this check nor the native
+generator provides race-free isolation from a malicious process changing files
+concurrently.
 
 ## Dependencies
 
