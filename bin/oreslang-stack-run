@@ -14,7 +14,7 @@ if [[ ! -f "$bundle/.oreslang-stack-entry" || -L "$bundle/.oreslang-stack-entry"
 fi
 IFS= read -r entry < "$bundle/.oreslang-stack-entry" || [[ -n "${entry:-}" ]]
 case "$entry" in
-  src/*) ;;
+  src/*.ores) ;;
   *) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
 esac
 case "$entry" in
