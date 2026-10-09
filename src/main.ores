@@ -302,10 +302,10 @@ fnc route_manifest(String root, String role, String kind, bool check, bool dry):
 }
 
 fnc generate(String root, String role, String kind, bool check): String {
-  if kind != "all" & kind != "rpc" & kind != "lambda"; then
+  if kind != "all", kind != "rpc", kind != "lambda"; then
     return error("generate expects all|rpc|lambda");
   fi
-  if !is_api(role) & kind == "rpc"; then
+  if !is_api(role), kind == "rpc"; then
     return error("web pages do not produce RPC operations");
   fi
   // Phase 1: validate every source and pre-existing artifact before writes.
