@@ -61,7 +61,14 @@ help = "Check adapter drift and run the native Oreslang compiler on every source
 
 [commands.dev]
 env = "ORESLANG_STACK_COMMAND_DEV"
-help = "Run the Oreslang application once with the Java/Graal runtime."
+help = "Run once by default; opt into the isolated grandaddy/daddy/child dev-tree supervisor."
+
+[commands.dev.flags.generation-tree]
+env = "ORESLANG_STACK_GENERATION_TREE"
+aliases = ["generation-tree"]
+type = "bool"
+default = "false"
+help = "Run the loopback-only, opt-in three-generation development server (requires dev-tree.json and Python 3)."
 
 [commands.build]
 env = "ORESLANG_STACK_COMMAND_BUILD"

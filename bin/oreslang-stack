@@ -18,7 +18,7 @@ fi
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
-Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
+Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal] [--generation-tree]
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
@@ -26,7 +26,9 @@ Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
-dev: run an Oreslang project once (watch/reload is not implemented).
+dev: run once by default; --generation-tree uses an explicit dev-tree.json
+     with per-route workers, middleware generation and stable loopback proxy.
+     fixture_echo=true only proves process reload isolation, not Oreslang execution.
 build: Oreslang native generators + compiler checks + source-only bundle.
 routes: emit manifest from Oreslang-native route discovery.
 generate: Oreslang-native RPC/Lambda source generation and drift detection.
@@ -110,6 +112,18 @@ case "$entry_parent" in
   "$root"|"$root"/*) ;;
   *) echo "oreslang-stack: entrypoint path escapes project root" >&2; exit 2 ;;
 esac
+
+# This separate opt-in host supervisor operates real HTTP worker processes.
+# No Oreslang source is silently interpreted in fixture_echo mode. In real
+# mode the project must supply explicit middleware/route worker argv.
+# The default dev flow still uses native Oreslang admission below.
+if [[ "$requested_command" == "dev" && "${ORESLANG_STACK_GENERATION_TREE:-false}" == "true" ]]; then
+  if ! command -v python3 >/dev/null 2>&1; then
+    echo "oreslang-stack: Python 3 required for the opt-in generation tree" >&2
+    exit 127
+  fi
+  exec python3 "$cli_home/bin/generation-tree.py" --root "$root" --language oreslang
+fi
 
 # Read-only and env permissions are explicitly scoped. No --allow-all.
 # The .ores program emits exactly one validated action; any other output
