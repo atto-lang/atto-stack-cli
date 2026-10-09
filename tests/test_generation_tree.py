@@ -145,5 +145,55 @@ class GenerationalReloadContract(unittest.TestCase):
                               "--language","rust"],capture_output=True,text=True,timeout=4)
             self.assertNotEqual(p.returncode,0)
             self.assertIn("symlink",p.stderr)
+
+    def test_demo_method_file_get_ores_reloads_without_grandaddy_restart(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = pathlib.Path(temp)
+            route = root / "src/routes/rest/health"
+            route.mkdir(parents=True)
+            (root / "src/middleware").mkdir(parents=True)
+            (root / "src/middleware/auth.ores").write_text("middleware-v1")
+            source = route / "get.ores"
+            source.write_text("health-v1")
+            with socket.socket() as sock:
+                sock.bind(("127.0.0.1",0))
+                port = sock.getsockname()[1]
+            (root/"dev-tree.json").write_text(json.dumps({
+                "schema":"ores.dev.generations/v1", "port":port,
+                "middleware":"src/middleware", "fixture_echo":True,
+                "routes":[{"path":"/health", "dir":"src/routes/rest/health",
+                           "source_file":"get.ores"}]
+            }))
+            proc=subprocess.Popen([sys.executable,str(SCRIPT),"--root",str(root),
+                                   "--language","oreslang"],
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,
+                                   start_new_session=True)
+            try:
+                first_line=proc.stdout.readline()
+                self.assertTrue(first_line)
+                def query():
+                    conn=http.client.HTTPConnection("127.0.0.1",port,timeout=3)
+                    try:
+                        conn.request("GET","/health")
+                        resp=conn.getresponse()
+                        return dict(resp.getheaders()),resp.read()
+                    finally:conn.close()
+                one,b=query()
+                self.assertEqual(b,b"health-v1")
+                source.write_text("health-v2")
+                deadline=time.monotonic()+8
+                while time.monotonic()<deadline:
+                    time.sleep(.15)
+                    two,body=query()
+                    if body==b"health-v2":break
+                else:self.fail("get.ores method source did not reload")
+                self.assertEqual(one["X-Ores-Grandaddy-PID"],two["X-Ores-Grandaddy-PID"])
+                self.assertEqual(one["X-Ores-Daddy-PID"],two["X-Ores-Daddy-PID"])
+                self.assertNotEqual(one["X-Ores-Child-PID"],two["X-Ores-Child-PID"])
+            finally:
+                proc.terminate()
+                try:proc.communicate(timeout=5)
+                except subprocess.TimeoutExpired:proc.kill();proc.communicate()
+
 if __name__=="__main__":
     unittest.main()
