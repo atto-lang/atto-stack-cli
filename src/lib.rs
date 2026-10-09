@@ -157,9 +157,10 @@ fn plan(args: &[String]) -> Result<String, String> {
         "wasm-xprs" => ("future-backend", "wasm", "Oreslang-to-WASM compiler and host adapter not implemented"),
         "iso-lattes" => ("future-backend", "js-or-wasm", "Oreslang-to-JS/WASM compiler and isolate adapter not implemented"),
         "lunatic-lorry" => ("future-backend", "wasm", "Oreslang-to-WASM compiler and actor host adapter not implemented"),
+        "litegraph" => ("planned", "llvm-litegraph", "LiteGraph requires a verified LLVM target ABI, GPU capability mapping, host adapter and runtime receipts"),
         "beamscale" => return Err("unsupported deployment target beamscale: Oreslang will not compile to Erlang/BEAM".into()),
         "pony-expres" => return Err("unsupported deployment target pony-expres: Oreslang will not compile to Pony".into()),
-        "ores-stack" | "graal-show" | "litegraph" =>
+        "ores-stack" | "graal-show" =>
             return Err(format!("unsupported Oreslang deployment target {target}: no admitted source/backend/host adapter")),
         _ => return Err(format!("unsupported Oreslang deployment target {target:?}")),
     };
@@ -614,7 +615,7 @@ mod tests {
         let root = temp();
         init(&root, "api");
         gen(&root, &["all"]).unwrap();
-        for target in ["oreslang-stack", "scintilla-run", "wasm-xprs", "iso-lattes", "lunatic-lorry"] {
+        for target in ["oreslang-stack", "scintilla-run", "wasm-xprs", "iso-lattes", "lunatic-lorry", "litegraph"] {
             let output = execute(&[
                 "plan".into(), "--target".into(), target.into(),
                 "--root".into(), root.display().to_string()
@@ -622,7 +623,7 @@ mod tests {
             assert!(output.contains("\"deployable\": false"));
             assert!(output.contains(target));
         }
-        for target in ["beamscale", "pony-expres", "ores-stack", "graal-show", "litegraph"] {
+        for target in ["beamscale", "pony-expres", "ores-stack", "graal-show"] {
             let error = execute(&[
                 "plan".into(), "--target".into(), target.into(),
                 "--root".into(), root.display().to_string()
