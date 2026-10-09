@@ -65,7 +65,9 @@ fnc repository_role(String root): String {
   if role == "\"admin-api\""; then return "admin-api"; fi
   if role == "\"web\""; then return "web"; fi
   if role == "\"admin-web\""; then return "admin-web"; fi
-  return error("invalid repository role; expected api|admin-api|web|admin-web");
+  if role == "\"infra\""; then return "infra"; fi
+  if role == "\"lambdas\""; then return "lambdas"; fi
+  return error("invalid repository role; expected api|admin-api|web|admin-web|infra|lambdas");
 }
 
 fnc is_api(String role): bool {
@@ -371,12 +373,19 @@ fnc init_project(String root, String entry, String role): String {
   if entry != "src/main.ores"; then
     return error("init requires the default src/main.ores entrypoint");
   fi
-  if role != "api", role != "admin-api", role != "web", role != "admin-web"; then
-    return error("init expects --role api|admin-api|web|admin-web");
+  if role != "api", role != "admin-api", role != "web", role != "admin-web",
+    role != "infra", role != "lambdas"; then
+    return error("init expects --role api|admin-api|web|admin-web|infra|lambdas");
   fi
   val String manifest = root + "/oreslang-stack.toml";
   val String source_root = root + "/src";
   val String generated_root = root + "/generated";
+  val String infra_candidate = root + "/.oreslang-stack-infra.candidate.toml";
+  val String lambda_candidate = root + "/.oreslang-stack-lambdas.candidate.toml";
+  if fs.exists(infra_candidate) | fs.is_symlink(infra_candidate) |
+    fs.exists(lambda_candidate) | fs.is_symlink(lambda_candidate); then
+    return error("init refuses existing stack candidate manifest");
+  fi
   if fs.exists(manifest) | fs.is_symlink(manifest) |
     fs.exists(source_root) | fs.is_symlink(source_root) |
     fs.exists(generated_root) | fs.is_symlink(generated_root); then
@@ -385,10 +394,36 @@ fnc init_project(String root, String entry, String role): String {
 
   val bool api = is_api(role);
   val String route_dir = source_root + (api ? "/routes" : "/pages");
-  fs.mkdir_all(route_dir);
+  if role == "infra"; then
+    fs.mkdir_all(source_root + "/infra");
+  else
+    if role == "lambdas"; then
+      fs.mkdir_all(source_root + "/functions/hello");
+    else
+      fs.mkdir_all(route_dir);
+    fi
+  fi
   fs.write_text_atomic(manifest, "[repository]\nrole = \"" + role + "\"\n");
   fs.write_text_atomic(source_root + "/main.ores",
     "pub routine main(): void {\n  stdio.println(\"hello from Oreslang stack\");\n  return;\n}\n");
+  if role == "infra"; then
+    // Candidate-only: this is not Terraform/Crossplane provisioning.
+    fs.write_text_atomic(infra_candidate,
+      "[candidate]\nrole = \"infra\"\ndeployable = false\n");
+    fs.write_text_atomic(source_root + "/infra/config.ores",
+      "define module infra_candidate as\n" +
+      "  pub fnc status(): String { return \"not-deployable\"; }\nend\n");
+    return "ORESLANG_STACK_ACTION_v1:initialized";
+  fi
+  if role == "lambdas"; then
+    // No provider runtime, compiled bootstrap or zip artifact is implied.
+    fs.write_text_atomic(lambda_candidate,
+      "[candidate]\nrole = \"lambdas\"\ndeployable = false\n");
+    fs.write_text_atomic(source_root + "/functions/hello/handler.ores",
+      "define module handler as\n" +
+      "  pub fnc invoke(String event): String { return event; }\nend\n");
+    return "ORESLANG_STACK_ACTION_v1:initialized";
+  fi
   if api; then
     fs.write_text_atomic(route_dir + "/handlers.ores",
       "define module handlers as\n  pub fnc greet(String request) -> String {\n    return request;\n  }\nend\n");
@@ -414,6 +449,24 @@ fnc admission(String root, String entry, String action): String {
   val String entry_path = root + "/" + entry;
   if fs.is_symlink(entry_path) | !fs.exists(entry_path); then
     return error("missing or symlinked Oreslang application entrypoint");
+  fi
+  if role == "infra" | role == "lambdas"; then
+    if action == "check"; then
+      val String candidate = role == "infra" ?
+        root + "/.oreslang-stack-infra.candidate.toml" :
+        root + "/.oreslang-stack-lambdas.candidate.toml";
+      if fs.is_symlink(candidate) | !fs.exists(candidate); then
+        return error("missing or symlinked non-deployable candidate manifest");
+      fi
+      val String marker = role == "infra" ?
+        root + "/src/infra/config.ores" :
+        root + "/src/functions/hello/handler.ores";
+      if fs.is_symlink(marker) | !fs.exists(marker); then
+        return error("missing or symlinked candidate Oreslang source");
+      fi
+      return "ORESLANG_STACK_ACTION_v1:check";
+    fi
+    return error("infra/lambdas only support init and compile check; deployment and runtime adapters are not certified");
   fi
   if action == "routes"; then
     // Source inventory is intentionally independent of previously generated
