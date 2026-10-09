@@ -179,6 +179,27 @@ def stop(proc):
             proc.kill()
             proc.wait(timeout=2)
 
+def retire_worker(state, proc):
+    # Allow a bounded in-flight drain, interrupted by grandaddy shutdown.
+    state["stop"].wait(4)
+    try:
+        stop(proc)
+    finally:
+        with state["lock"]:
+            if proc in state["retired"]:
+                state["retired"].remove(proc)
+
+def cleanup_workers(state, started):
+    state["stop"].set()
+    with state["lock"]:
+        live = [state["daddy"]] + list(state["children"].values())
+        retired = list(state["retired"])
+    for item in live:
+        if item:
+            stop(item[0])
+    for proc in set(started + retired):
+        stop(proc)
+
 def await_ready(port, proc, token):
     # Compiling cold Rust or Graal workers can exceed a 3-second probe window.
     deadline = time.monotonic() + 30
@@ -241,6 +262,8 @@ def forwarded(port, handler, token, child_port=None):
     if not 0 <= size <= 256 * 1024:
         return 413, {}, b"request body too large"
     payload = handler.rfile.read(size) if size else b""
+    if len(payload) != size:
+        return 400, {}, b"incomplete request body"
     # Connection names additional hop-by-hop fields; do not forward those
     # even though the Connection header itself is removed.
     connection_names = {name.strip().lower() for line in handler.headers.get_all("Connection", [])
@@ -420,6 +443,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                     with state["lock"]:
                         old = state["daddy"]
                         state["daddy"] = new
+                        state["retired"].append(old[0])
                         state["daddy_generation"] += 1
                     last_m = after
                 else:
@@ -437,10 +461,11 @@ def monitor(state, script, root, middleware, routes, fixture):
                     with state["lock"]:
                         old = state["children"][key]
                         state["children"][key] = new
+                        state["retired"].append(old[0])
                         state["child_generations"][key] += 1
                     last[key] = after
-                threading.Thread(target=lambda p:(time.sleep(.6), stop(p)),
-                                 args=(old[0],), daemon=True).start()
+                threading.Thread(target=retire_worker, args=(state, old[0]),
+                                 daemon=True).start()
                 print("grandaddy: reloaded", key, "old", old[0].pid,
                       "new", new[0].pid, "hash", after[:12],
                       file=sys.stderr, flush=True)
@@ -459,8 +484,9 @@ def supervise(args):
     state = {"mode":"grandaddy", "token":token, "children":{}, "daddy":None,
              "daddy_argv":config.get("daddy_argv"), "lang":args.language,
              "daddy_generation":0, "child_generations":{route:0 for route in routes},
-             "stop":threading.Event(), "lock":threading.Lock()}
+             "stop":threading.Event(), "lock":threading.Lock(), "retired":[]}
     started = []
+    watcher = None
     try:
         mhash = digest_tree(root, middleware)
         state["initial_middleware"] = mhash
@@ -477,11 +503,18 @@ def supervise(args):
                 "child", marker, token, row["dir"])
             state["children"][route] = child
             started.append(child[0])
+        # Deny a mixed startup generation if source changed during compilation.
+        if digest_tree(root, middleware) != mhash or any(
+            digest_tree(root, row["dir"], False) != state["initial_routes"][route]
+            for route, row in routes.items()
+        ):
+            fail("source changed during initial worker admission")
         httpd = HttpService(("127.0.0.1", port), Worker)
         httpd.state = state
-        threading.Thread(target=monitor,
+        watcher = threading.Thread(target=monitor,
              args=(state,script,root,middleware,routes,config.get("fixture_echo")),
-             daemon=True).start()
+             daemon=True)
+        watcher.start()
         def shutdown(signum, frame):
             state["stop"].set()
             threading.Thread(target=httpd.shutdown, daemon=True).start()
@@ -495,11 +528,10 @@ def supervise(args):
         httpd.server_close()
     finally:
         state["stop"].set()
-        with state["lock"]:
-            running = [state["daddy"]] + list(state["children"].values())
-        for item in running:
-            if item: stop(item[0])
-        for proc in started: stop(proc)
+        # A daemon watcher may still be admitting a slow guest-code candidate.
+        if watcher is not None:
+            watcher.join(timeout=35)
+        cleanup_workers(state, started)
 
 def main():
     parser = argparse.ArgumentParser()
