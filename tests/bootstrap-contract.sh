@@ -124,4 +124,11 @@ if "$repo/bin/oreslang-stack" init --root "$tmp/bad-entry" --role api --entry sr
 fi
 test ! -e "$tmp/bad-entry/src"
 
+mkdir -p "$tmp/bad-backend"
+if "$repo/bin/oreslang-stack" init --root "$tmp/bad-backend" --role api --backend llvm; then
+  echo "init must refuse unimplemented backends" >&2
+  exit 1
+fi
+test ! -e "$tmp/bad-backend/src"
+
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
