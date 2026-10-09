@@ -85,9 +85,15 @@ class ProxyAdmission(unittest.TestCase):
                     TREE.spawn_worker(ROOT / "bin/generation-tree.py", ROOT,
                                       None, "child", "example", "local-admission")
                     env = launch.call_args.kwargs["env"]
+                    argv = launch.call_args.args[0]
         self.assertNotIn("UNRELATED_PRIVATE_SETTING", env)
         self.assertEqual(env["ORESLANG_BIN"], "/opt/test-interpreter")
         self.assertEqual(env["ORES_DEV_HEALTH_TOKEN"], "local-admission")
+        self.assertEqual(env["ORES_DEV_MARKER"], "example")
+        self.assertNotIn("local-admission", argv)
+        self.assertNotIn("example", argv)
+        self.assertNotIn("--token", argv)
+        self.assertNotIn("--marker", argv)
         self.assertEqual(env["ORES_DEV_ROOT"], str(ROOT))
 
     def test_unambiguous_request_framing_and_target(self):
