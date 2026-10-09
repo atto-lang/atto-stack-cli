@@ -24,5 +24,6 @@ jobs:
           python3 -m unittest discover -s tests -p test_proxy_security.py -v
           python3 -m unittest discover -s tests -p test_process_tree_security.py -v
           python3 -m unittest discover -s tests -p test_source_snapshot_security.py -v
+          python3 -m unittest discover -s tests -p test_generation_lifecycle_audit.py -v
       - name: Oreslang bootstrap shell parse
         run: bash -n bin/oreslang-stack
