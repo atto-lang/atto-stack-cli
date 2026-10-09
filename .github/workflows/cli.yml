@@ -31,6 +31,7 @@ jobs:
           cargo run --quiet -- generate all --root "$root/api" --check
           cargo run --quiet -- routes --root "$root/api" | grep '"kind":"route"'
           cargo run --quiet -- plan --target wasm-xprs --root "$root/api" | grep '"deployable": false'
+          cargo run --quiet -- plan --target litegraph --root "$root/api" | grep '"required_artifact": "llvm-litegraph"'
           if cargo run --quiet -- plan --target beamscale --root "$root/api"; then
             echo "beamscale must not be a deployment target" >&2
             exit 1
