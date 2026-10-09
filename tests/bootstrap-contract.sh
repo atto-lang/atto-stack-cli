@@ -41,4 +41,9 @@ if "$repo/bin/oreslang-stack" build --backend llvm --root "$tmp/project"; then
   echo "llvm must not be accepted as build-capable" >&2
   exit 1
 fi
+ln -s "$tmp/project" "$tmp/project-link"
+if "$repo/bin/oreslang-stack" dev --root "$tmp/project-link"; then
+  echo "symlink project root must fail" >&2
+  exit 1
+fi
 echo 'host bootstrap contract checks passed (mock interpreter; not native language compilation)'
