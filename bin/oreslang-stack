@@ -154,12 +154,13 @@ case "$requested_command" in
       admission_permissions+=("--allow-write=$root/src,$root/generated")
     fi ;;
 esac
-# Independent host deny gate: a guest receipt must never widen candidate roles.
-if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != init ]]; then
-  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*
+# Independent host deny gate: no guest process starts for unsupported
+# operations on infra/Lambda candidates, even when role whitespace varies.
+if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
+  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*$' "$root/oreslang-stack.toml"; then
     case "$requested_command" in
       check|deploy) ;;
-      *) echo "oreslang-stack: infra/lambdas are candidate-only; command refused" >&2; exit 2 ;;
+      *) echo "oreslang-stack: candidate-only role forbids this command" >&2; exit 2 ;;
     esac
   fi
 fi
