@@ -78,18 +78,25 @@ class RealLanguageWorkerContract(unittest.TestCase):
                          headers["X-Ores-Daddy-PID"],headers["X-Ores-Child-PID"]),
                         body,headers["X-Ores-Middleware-Version"]
                     )
+                def generation(path):
+                    status, headers, _ = request(path)
+                    self.assertEqual(status, 200)
+                    return headers["X-Ores-Generation"]
                 a,v,m=snap("/a")
                 b,w,n=snap("/b")
                 self.assertEqual(v,b"a-v1")
                 self.assertEqual(w,b"b-v1")
                 self.assertEqual(m,"middleware-v1")
                 self.assertEqual(a[:2],b[:2])
+                self.assertEqual(generation("/a"), "d0:c0")
+                self.assertEqual(generation("/b"), "d0:c0")
                 # Invalid guest code must never replace the working child.
                 route_a.write_text("this is not valid " + language + " source\n")
                 time.sleep(1.4)
                 still,body,_=snap("/a")
                 self.assertEqual(still,a)
                 self.assertEqual(body,b"a-v1")
+                self.assertEqual(generation("/a"), "d0:c0")
                 self.assertEqual(snap("/b")[0],b)
                 # Recovery compiles/executes new code and swaps only route A.
                 route_a.write_text(source_for(language,"a-v2"))
@@ -101,6 +108,8 @@ class RealLanguageWorkerContract(unittest.TestCase):
                 else: self.fail("valid changed source never produced a new route child")
                 self.assertEqual(current[:2],a[:2])
                 self.assertNotEqual(current[2],a[2])
+                self.assertEqual(generation("/a"), "d0:c1")
+                self.assertEqual(generation("/b"), "d0:c0")
                 self.assertEqual(snap("/b")[0],b)
                 # Wait beyond the old-generation drain period; this is a
                 # stability assertion, not a way to ignore a second restart.
@@ -120,6 +129,8 @@ class RealLanguageWorkerContract(unittest.TestCase):
                 self.assertEqual(now[0],a[0])
                 self.assertNotEqual(now[1],a[1])
                 self.assertEqual(now[2],current[2])
+                self.assertEqual(generation("/a"), "d1:c1")
+                self.assertEqual(generation("/b"), "d1:c0")
                 self.assertEqual(snap("/b")[0][2],b[2])
                 self.assertEqual(request("/missing")[0],404)
             finally:
