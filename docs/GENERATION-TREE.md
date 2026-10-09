@@ -76,8 +76,10 @@ X-Ores-Daddy-PID, and X-Ores-Child-PID and enforce:
 
 Polling is content-hashed, with 150 ms poll and 300 ms stabilization.
 Each worker must become healthy before its replacement is admitted;
-old generations are retired after a short grace period. A 502 may still
-occur for an in-flight request: **no zero-downtime SLA is claimed**.
+old generations receive up to four seconds for in-flight requests before
+process-group teardown. Grandaddy shutdown interrupts that delay and stops
+all retired groups, even if their daemon cleanup threads never ran. A 502
+may still occur for an in-flight request: **no zero-downtime SLA is claimed**.
 Route snapshots cover direct route-folder files; middleware snapshots
 cover its subtree.
 
@@ -108,6 +110,10 @@ protocol. The HTTP host is still local developer tooling.
 
 Worker teardown targets its entire owned POSIX process group, even if
 the leader exited while a compiler or actor descendant remains.
+Initial admission rehashes all watched sources after worker readiness,
+rejecting stale startup generations before opening the public listener.
+The watcher is joined at shutdown so slow in-progress admissions can
+terminate their replacement candidates before the grandaddy exits.
 
 ## Worker credential handoff
 
@@ -160,7 +166,7 @@ operations must continue to fail closed.
 The opt-in development server now has regression tests for:
 
 - **HTTP admission and proxy isolation:** rejects transfer-encoded or
-  ambiguous-content-length requests and non-origin-form targets. Removes
+  ambiguous-content-length requests, truncated bodies, and non-origin-form targets. Removes
   request and response hop-by-hop headers, including fields named by
   `Connection`. Never exposes upstream `X-Ores-Dev-*` internal headers.
 - **Bounded local HTTP workload:** at most 64 simultaneously admitted
@@ -178,8 +184,10 @@ The opt-in development server now has regression tests for:
   during compilation discards that candidate without replacing the healthy
   generation.
 - **Lifecycle cleanup:** POSIX process groups are terminated even if their
-  group leader has already exited. Workers finishing admission after shutdown
-  are immediately stopped instead of being promoted.
+  group leader has already exited. Retired groups are tracked for termination
+  on shutdown, including when teardown runs before their grace period ends.
+  Workers finishing admission after shutdown are immediately stopped instead
+  of being promoted.
 
 Security tests live in `tests/test_proxy_security.py`,
 `tests/test_process_tree_security.py`, and
