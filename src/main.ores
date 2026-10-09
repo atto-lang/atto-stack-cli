@@ -342,6 +342,12 @@ fnc manifest_from_records(String role, String records): String {
 
 fnc route_manifest(String root, String role, String kind, bool check, bool dry): String {
   val String folder = is_api(role) ? "routes" : "pages";
+  val String forbidden = is_api(role) ? "pages" : "routes";
+  val String forbidden_path = root + "/src/" + forbidden;
+  // Reject another role's tree; accepting it silently omits routes at build time.
+  if fs.is_symlink(forbidden_path) | fs.exists(forbidden_path); then
+    return error("source role mismatch: unexpected " + forbidden + " source tree");
+  fi
   val String path = root + "/src/" + folder;
   val String records = walk(root, path, "/", "/", role, kind, check, dry, 0);
   if is_error(records); then return records; fi
@@ -391,8 +397,8 @@ fnc admission(String root, String entry, String action): String {
   val String role = repository_role(root);
   if is_error(role); then return role; fi
   val String entry_path = root + "/" + entry;
-  if fs.is_symlink(entry_path) | !fs.exists(entry_path); then
-    return error("missing or symlinked Oreslang application entrypoint");
+  if fs.is_symlink(entry_path) | !fs.exists(entry_path) | fs.is_dir(entry_path); then
+    return error("missing, symlinked or non-file Oreslang application entrypoint");
   fi
   if action == "routes"; then
     // Source inventory is intentionally independent of previously generated
