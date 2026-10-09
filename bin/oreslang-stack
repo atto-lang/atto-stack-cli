@@ -18,7 +18,8 @@ fi
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
-Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
+Usage: oreslang-stack init --role api|admin-api|web|admin-web [--root DIR]
+       oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
@@ -26,6 +27,7 @@ Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
+init: create a fresh project; never replace src/, generated/ or project manifest.
 dev: run an Oreslang project once (watch/reload is not implemented).
 build: Oreslang native generators + compiler checks + source-only bundle.
 routes: emit manifest from Oreslang-native route discovery.
@@ -41,12 +43,12 @@ fi
 # The command token is mandatory and controls the host receipt whitelist.
 # Do not allow inherited ORESLANG_STACK_COMMAND to replace command selection.
 if (( $# == 0 )); then
-  echo "oreslang-stack: expected dev|build|deploy|routes|generate|check" >&2
+  echo "oreslang-stack: expected init|dev|build|deploy|routes|generate|check" >&2
   exit 2
 fi
 requested_command="$1"
 case "$requested_command" in
-  dev|build|deploy|routes|generate|check) ;;
+  init|dev|build|deploy|routes|generate|check) ;;
   *) echo "oreslang-stack: unknown command: $requested_command" >&2; exit 2 ;;
 esac
 if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
@@ -75,9 +77,14 @@ export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
 export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
+export ORESLANG_STACK_ROLE="${ORESLANG_STACK_ROLE:-}"
 
 root="${ORESLANG_STACK_ROOT:-.}"
 entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+if [[ "$requested_command" == "init" && "$entry" != "src/main.ores" ]]; then
+  echo "oreslang-stack: init requires src/main.ores" >&2
+  exit 2
+fi
 
 # A project entrypoint must stay relative to its selected root.
 case "$entry" in
@@ -94,6 +101,13 @@ if [[ ! -d "$root" || -L "$root" ]]; then
 fi
 root="$(cd -- "$root" && pwd -P)"
 export ORESLANG_STACK_ROOT="$root"
+if [[ "$requested_command" == "init" ]]; then
+  if [[ -e "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ||
+        -e "$root/src" || -L "$root/src" || -e "$root/generated" || -L "$root/generated" ]]; then
+    echo "oreslang-stack: init refuses existing project sources or generated paths" >&2
+    exit 2
+  fi
+fi
 if [[ -L "$root/src" || ( -e "$root/src" && ! -d "$root/src" ) || -L "$root/generated" ]]; then
   echo "oreslang-stack: symlink or invalid source/generated directory" >&2
   exit 2
@@ -102,11 +116,11 @@ if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
   echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
   exit 2
 fi
-if ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
+if [[ "$requested_command" != "init" ]] && ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
   echo "oreslang-stack: entrypoint parent is missing" >&2
   exit 2
 fi
-case "$entry_parent" in
+case "${entry_parent:-$root}" in
   "$root"|"$root"/*) ;;
   *) echo "oreslang-stack: entrypoint path escapes project root" >&2; exit 2 ;;
 esac
@@ -117,10 +131,11 @@ esac
 # Compiler/generator guest can read the project. Only commands that actually
 # generate code receive write grants; check/routes/deploy are strictly read-only.
 admission_permissions=(
-  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK"
+  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK,ORESLANG_STACK_ROLE"
   "--allow-read=$root"
 )
 case "$requested_command" in
+  init) admission_permissions+=("--allow-write=$root/oreslang-stack.toml,$root/src,$root/generated") ;;
   dev|build) admission_permissions+=("--allow-write=$root/src,$root/generated") ;;
   generate)
     if [[ "$ORESLANG_STACK_CHECK" != "true" ]]; then
@@ -169,6 +184,11 @@ compiler_check_all() {
 }
 
 case "$action" in
+  ORESLANG_STACK_ACTION_v1:initialized)
+    [[ "${ORESLANG_STACK_COMMAND:-}" == "init" ]] || exit 1
+    compiler_check_all
+    printf '%s\n' "initialized Oreslang ${ORESLANG_STACK_ROLE} project at ${root}"
+    ;;
   ORESLANG_STACK_JSON_v1:*)
     if [[ "${ORESLANG_STACK_COMMAND:-}" != "routes" ]]; then
       echo "oreslang-stack: unexpected JSON receipt" >&2
