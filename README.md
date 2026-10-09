@@ -14,6 +14,8 @@ or generate source adapters.
 ## Commands
 
 ```bash
+oreslang-stack init --root /path/to/new-api-repo --role api
+oreslang-stack init --root /path/to/new-web-repo --role web
 oreslang-stack dev --root examples/hello-api
 oreslang-stack routes --root examples/hello-api
 oreslang-stack generate --kind all --root examples/hello-api
@@ -25,12 +27,29 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 
 | Command | Behavior |
 |---|---|
-| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
+| `init` | Oreslang-native generation of fresh API/web project sources and canonical adapters; refuses existing `src/`, `generated/`, or project manifests |\n| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
 | `build` | Generation, compiler checks, a source distribution containing a runnable `bin/oreslang-stack-run` (requires installed Oreslang); **not a compiled native/JVM/WASM executable** |
 | `deploy` | Explicit **hard failure** until a backend-specific certified deploy adapter exists |
+
+## Multi-repository bootstrap
+
+Use the exact same CLI for fresh repositories of roles `api`, `admin-api`, `web` and `admin-web`. For example, once the required GitHub repositories are cloned and the Java/Graal Oreslang runtime and `flags2env` are installed:
+
+```bash
+# In an existing empty project checkout (a README/.git is fine):
+oreslang-stack init --root . --role api
+oreslang-stack routes --root .
+oreslang-stack generate --kind all --check --root .
+oreslang-stack check --root .
+oreslang-stack build --root .
+```
+
+`init` is intentionally non-destructive: a preexisting `oreslang-stack.toml`, `src/` or `generated/` is a hard refusal, **not** an invitation to migrate existing code. It creates a minimal route/page, entrypoint, role manifest and generated adapters via native Oreslang and compiler-checks the result. It does not provision GitHub repositories, authenticate to an organization, build a native binary, certify deploy, or imply that the generated route is a running HTTP server.
+
+All filesystem writes are scoped to the selected repository. Project initialization is not a single atomic transaction across multiple files; if the actual compiler/generator fails after creating output, inspect it before retrying rather than overwriting any authored work.
 
 ## Source layout
 
