@@ -248,7 +248,6 @@ case "$action" in
     tar -czf "$tmp" -C "$stage" .
     rm -rf "$stage"
     mv -f -- "$tmp" "$artifact"
-    mv -f -- "$tmp" "$artifact"
     trap - EXIT
     printf 'Oreslang checked source bundle: %s\n' "$artifact"
     printf '%s\n' 'This is NOT a compiled native artifact. Unpack and use bin/oreslang-stack-run with a Java/Graal Oreslang runtime.'
