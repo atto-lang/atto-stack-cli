@@ -29,6 +29,16 @@ if [[ "$1" == --allow-env=* ]]; then
     exit 0
   fi
   case "$ORESLANG_STACK_COMMAND" in
+    init)
+      if [[ -e "$ORESLANG_STACK_ROOT/oreslang-stack.toml" ||
+            -e "$ORESLANG_STACK_ROOT/src" || -e "$ORESLANG_STACK_ROOT/generated" ]]; then
+        printf 'ERROR: native init must refuse populated project\n'
+      else
+        mkdir -p "$ORESLANG_STACK_ROOT/src/routes" "$ORESLANG_STACK_ROOT/generated"
+        printf '[repository]\nrole = "%s"\n' "$ORESLANG_STACK_ROLE" > "$ORESLANG_STACK_ROOT/oreslang-stack.toml"
+        printf 'pub routine main(): void { return; }\n' > "$ORESLANG_STACK_ROOT/src/main.ores"
+        printf 'ORESLANG_STACK_ACTION_v1:initialized\n'
+      fi ;;
     dev|build|check)
       mkdir -p "$ORESLANG_STACK_ROOT/generated"
       printf '{"schema": "oreslang.stack.inventory/v1"}\n' > "$ORESLANG_STACK_ROOT/generated/route-manifest.json"
@@ -91,4 +101,27 @@ if "$repo/bin/oreslang-stack" dev --root "$tmp/project-link"; then
   echo "symlink root must fail" >&2
   exit 1
 fi
+
+mkdir -p "$tmp/new-project"
+printf 'preserve readme\n' > "$tmp/new-project/README.md"
+"$repo/bin/oreslang-stack" init --role api --root "$tmp/new-project" | grep -F 'initialized Oreslang api project'
+test -f "$tmp/new-project/oreslang-stack.toml"
+test -f "$tmp/new-project/src/main.ores"
+grep -F 'preserve readme' "$tmp/new-project/README.md"
+if "$repo/bin/oreslang-stack" init --role api --root "$tmp/new-project"; then
+  echo "init must refuse an already initialized project" >&2
+  exit 1
+fi
+mkdir -p "$tmp/no-role"
+if "$repo/bin/oreslang-stack" init --root "$tmp/no-role"; then
+  echo "init without a role must fail" >&2
+  exit 1
+fi
+mkdir -p "$tmp/bad-entry"
+if "$repo/bin/oreslang-stack" init --root "$tmp/bad-entry" --role api --entry src/alternative.ores; then
+  echo "init must reject a nondefault entrypoint before any writes" >&2
+  exit 1
+fi
+test ! -e "$tmp/bad-entry/src"
+
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
