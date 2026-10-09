@@ -8,6 +8,7 @@ The framework and deployment CLI for **Oreslang-authored** applications. This re
 
 - **Oreslang** is the source language, actor/supervisor model, and compiler/runtime family (currently separate Java/Graal and LLVM paths).
 - **Oreslang Stack** is the application framework and its CLI: routes, API and RPC contracts, schema/code generation, build, local development, and deployable artifacts.
+- **Implementation language:** The stack's application/framework logic and, where the current compiler permits, the CLI itself must be authored in Oreslang (`.ores`), not Rust. A narrowly scoped host/bootstrap launcher is acceptable only when necessary to start the language runtime; it must not substitute Rust route/code-generation logic.
 - **Oreslang FaaS** is a *potential deployment host*, separate from the framework. Do not claim a hosted backend exists until the deployment adaptor and runtime evidence are available.
 - **ORES Stack** is the separate Rust framework and CLI. Shared *protocols* are possible; source/language/runtime identity is not shared.
 
