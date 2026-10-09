@@ -128,6 +128,8 @@ class RealLanguageWorkerContract(unittest.TestCase):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     _,stderr=process.communicate()
+                if sys.exc_info()[0] is not None:
+                    print("generation diagnostics:", stderr[-8000:], file=sys.stderr)
             self.assertEqual(process.returncode,0,stderr[-1500:])
 
     @unittest.skipUnless(shutil.which("rustc"),"rustc required for real Rust binaries")
