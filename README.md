@@ -1,90 +1,71 @@
 # Oreslang Stack CLI
 
-The framework and deployment CLI for **Oreslang-authored** applications. This repository is deliberately distinct from the Rust-based `ores-stack/ores-stack-cli`; `oreslang-stack` is not an alias or a Rust code-generation mode.
+**Oreslang-authored command dispatcher** for the Oreslang application framework.
+This draft replaces the Rust implementation originally proposed in
+[PR #2](https://github.com/ores-truffle-oreslang/oreslang-stack-cli/pull/2).
+The source of the CLI's command admission rules is [`src/main.ores`](src/main.ores),
+not Rust. The narrow [Bash launcher](bin/oreslang-stack) exists solely to invoke
+[`flags-2-env`](https://github.com/flags-2-env/flags-2-env), start the
+Oreslang runtime, execute an admitted host process, and create a source archive.
 
-> **Bootstrap status:** The repository was initialized with its contract before any CLI executable exists. No command listed below is implemented or certified yet.
+## CLI commands
 
-## Product boundary
+```sh
+oreslang-stack dev --root examples/hello-api
+oreslang-stack build --root examples/hello-api
+oreslang-stack deploy --root examples/hello-api --target oreslang-stack
+```
 
-- **Oreslang** is the source language, actor/supervisor model, and compiler/runtime family (currently separate Java/Graal and LLVM paths).
-- **Oreslang Stack** is the application framework and its CLI: routes, API and RPC contracts, schema/code generation, build, local development, and deployable artifacts.
-- **Implementation language:** The stack's application/framework logic and, where the current compiler permits, the CLI itself must be authored in Oreslang (`.ores`), not Rust. A narrowly scoped host/bootstrap launcher is acceptable only when necessary to start the language runtime; it must not substitute Rust route/code-generation logic.
-- **Oreslang FaaS** is a *potential deployment host*, separate from the framework. Do not claim a hosted backend exists until the deployment adaptor and runtime evidence are available.
-- **ORES Stack** is the separate Rust framework and CLI. Shared *protocols* are possible; source/language/runtime identity is not shared.
+| Command | Current behavior | Not yet implemented |
+|---|---|---|
+| `dev` | Verifies project manifest + entrypoint in Oreslang, then runs the entry once using Java/Graal Oreslang | File watching, hot reload, supervisors, dev HTTP server |
+| `build` | Oreslang admits the project; real compiler `--check` must pass before `dist/oreslang-stack-source.tar.gz` is emitted | Compiled native/JVM/WASM artifact, provenance and packaging attestations |
+| `deploy` | **Fails closed** with a nonzero exit status | Every host adapter, remote upload and admission receipt |
 
-## Proposed command contract (not implemented)
+**A source bundle is not a compiled/deployable build.** The Oreslang LLVM
+compiler does not currently support the runtime features used here.
+`--backend llvm` is explicitly refused; do not treat a JVM/Graal success as
+LLVM parity. `deploy` must never return success without a certified adapter.
 
-| Command | Intended contract |
-| --- | --- |
-| `oreslang-stack init` | Create an Oreslang project without Rust application source |
-| `oreslang-stack check` | Parse, type-check and validate contracts without deployment |
-| `oreslang-stack routes` | Deterministic HTTP/GraphQL/RPC route inventory |
-| `oreslang-stack generate` | Deterministic contract-driven GraphQL/RPC/Lambda interface generation |
-| `oreslang-stack build --backend graal|llvm` | Produce a backend-specific artifact with provenance |
-| `oreslang-stack dev` | Local application development and actor lifecycle |
-| `oreslang-stack plan --target <runtime>` | Validate portability and deployment compatibility without side effects |
-| `oreslang-stack deploy --target <runtime>` | Explicit deployment; blocked until a certified adapter exists |
+## Dependencies and usage
 
-Generated GraphQL, RPC and Lambda code must be verified against the actual domain TypeSpec/JSON Schema/Protobuf contracts. A green generator snapshot is not enough. An LLVM-native success must **not** imply JVM/Graal works (or the reverse).
+Install the `flags2env` command from
+[flags-2-env/flags-2-env](https://github.com/flags-2-env/flags-2-env)
+and the **Java/Graal** Oreslang CLI executable (`oreslang` on your PATH).
+Set `FLAGS2ENV_BIN` and/or `ORESLANG_BIN` to override their paths.
 
-## Comparison fixture integration
+```sh
+./bin/oreslang-stack --help
+./bin/oreslang-stack dev --root examples/hello-api
+./bin/oreslang-stack build --root examples/hello-api
+```
 
-`ORESoftware/ores-comparisons` is the consumer of the `ores-dummy-org-oreslang-stack` fixture family, which is intended to be committed as individually pinned Git submodules across each comparison stack. The comparison must preserve exact repository names, branch and immutable commit IDs. Missing private repo access remains a pending state, never a dummy checkout or a pass.
+`flags2env shell-env` evaluates the pinned, audited
+[`.cli-flags.toml`](.cli-flags.toml) contract. Only recognized commands and
+flags are admitted; `--root`, `--entry`, and `--backend` are shared flags.
+The Oreslang guest sees only scoped environment keys and read access to the
+selected project; it does not require general Java reflection or process spawn.
 
-See the parent comparison's `docs/ORESLANG-STACK.md` for the stack/host/compatibility model.
+A project has `oreslang-stack.toml` and an Oreslang `src/main.ores` entrypoint
+(by default). Existing route/page conventions and their RPC/Lambda
+generation design are documented in [docs/GENERATION.md](docs/GENERATION.md),
+but the former Rust generator has been **removed**, not falsely represented
+as a working native-Oreslang implementation. Native route inventory, contract
+validation, generation, and the real build/deploy backends remain outstanding
+engineering work.
 
-## Acceptance gate for the first executable version
+## Security and verification
 
-1. Real `.ores` parser/type-checker integration with separately tested Graal and LLVM compilers.
-2. Byte-stable route and interface generation, including GraphQL, RPC and Lambda capability gates.
-3. Explicit deployment target capabilities, deterministic plan output and no implicit deployment.
-4. Actor/process isolation, supervisor restart, hot-load compatibility semantics and truthful errors for unsupported operations.
-5. Real fixture build, launch and smoke tests with pinned revisions and recorded evidence.
+- No Rust toolchain or Cargo dependency is used for this CLI.
+- No fallback to Rust/JS/Python route generation.
+- No `--allow-all` at the CLI admission boundary.
+- Invalid or missing admission receipts fail closed.
+- Project manifest and entrypoint symlinks are rejected; source archive
+  production refuses symlinks within `src`.
+- `deploy` is deliberately nonfunctional, never a pretend success.
+- CI can exercise flag parsing and the **host bridge** with a mocked Oreslang
+  interpreter. Such tests do **not** prove that the Oreslang source type-checks
+  or runs in a real compiler. A separate real-Oreslang integration gate is
+  required before considering this production-ready.
 
-## Implemented source-level CLI (first slice, under review)
-
-The executable host-side adapter is written in Rust, like the existing \`ores-stack-cli\`, but **application source and framework extension points remain native Oreslang**. The Rust binary does not pretend to parse the full Oreslang language or replace the Oreslang HTTP router/RPC implementations. File discovery uses explicit Oreslang source conventions; semantic validity requires the **real Oreslang compiler**, invoked by \`check\`.
-
-\`\`\`bash
-cargo test --all-targets
-cargo run -- init --root /tmp/example-api --role api
-cargo run -- generate all --root /tmp/example-api
-cargo run -- generate all --root /tmp/example-api --check
-cargo run -- routes --root /tmp/example-api
-cargo run -- check --root /tmp/example-api --compiler oreslang
-cargo run -- plan --root /tmp/example-api --target wasm-xprs
-\`\`\`
-
-API repositories declare \`[repository] role = "api" | "admin-api"\` in \`oreslang-stack.toml\` and author \`src/routes/**/route.ores\` with a sibling \`handlers.ores\`. Each public wrapper carries a declared HTTP method/path/handler binding:
-
-\`\`\`ores
-// @ores-route GET /users/{id} get_user
-import module handlers from "./handlers";
-
-pub fnc get_user(String request) -> String {
-  return handlers.get_user(request);
-}
-\`\`\`
-
-The CLI emits sibling **generated** \`rpc.ores\` and \`lambda.ores\` adapters. Their current ABI is an intentionally minimal String request/response envelope; full typed GraphQL/RPC/Protobuf generation and deployment transports require additional compiler-backed contract work. A generated RPC wrapper forwards to the authored route which forwards to the authored handler. Generated Lambda source forwards through RPC; the FaaS adapter is **not yet implemented**.
-
-Web repositories declare \`role = "web" | "admin-web"\`, author \`src/pages/**/page.ores\` and get a sibling generated \`lambda.ores\`. Pages do not create RPC operations. The \`// @ores-page /users/{id} render\` declaration is checked against its filesystem path. Admin and public roles cannot be inferred from directory names.
-
-The CLI refuses symlinked source paths, missing handlers, conflicting dynamic route shapes, incorrect role/path declarations, stale generated outputs in \`--check\` mode, and overwriting unmarked source. It does not count a plan or a source-level generator snapshot as compiler or runtime proof.
-
-### Deployment target restrictions
-
-Only six stacks are *eligible for future deployment adapters*:
-
-| Target | Current admission |
-| --- | --- |
-| \`oreslang-stack\` | planned; Oreslang-native runtime adapter |
-| \`scintilla-run\` | planned; polyglot runtime adapter |
-| \`wasm-xprs\` | future Oreslang → WASM backend |
-| \`iso-lattes\` | future Oreslang → JS/WASM backend |
-| \`lunatic-lorry\` | future Oreslang → WASM backend |
-| `litegraph` | planned LLVM-compatible LiteGraph host/GPU adapter; ABI and device execution unproven |
-
-\`beamscale\` is permanently unsupported because Oreslang will not target BEAM/Erlang; \`pony-expres\` is unsupported because Oreslang does not compile to Pony. The Rust \`ores-stack\`, \`graal-show\` and \`litegraph\` are also not admitted deployment targets. \`plan\` gives a **\`deployable: false\`** receipt even for the six eligible lanes. \`deploy\` always fails until there is a real adapter and runtime proof.
-
-See also the [Oreslang-native routing contract](https://github.com/ores-truffle-oreslang/oreslang-http-routing), [Oreslang RPC contract](https://github.com/ores-truffle-oreslang/oreslang-rpc) and [Oreslang SSR library](https://github.com/ores-truffle-oreslang/oreslang-ssr).
+See [docs/NATIVE-CLI.md](docs/NATIVE-CLI.md) for boundary and acceptance criteria.

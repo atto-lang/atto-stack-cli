@@ -1,0 +1,106 @@
+#!/usr/bin/env bash
+# Bootstrap only: flags-2-env parsing, launch of Oreslang guest, process exec and tar.
+# All command admission is in src/main.ores; there is NO Rust CLI.
+set -euo pipefail
+
+cli_home="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
+flags2env_bin="${FLAGS2ENV_BIN:-flags2env}"
+oreslang_bin="${ORESLANG_BIN:-oreslang}"
+
+if ! command -v "$flags2env_bin" >/dev/null 2>&1; then
+  echo "oreslang-stack: flags2env is required (https://github.com/flags-2-env/flags-2-env)" >&2
+  exit 127
+fi
+if ! command -v "$oreslang_bin" >/dev/null 2>&1; then
+  echo "oreslang-stack: the Oreslang Java/Graal launcher is required (set ORESLANG_BIN)" >&2
+  exit 127
+fi
+
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
+  cat <<'EOF'
+Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
+       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
+       oreslang-stack deploy [--root DIR] [--target TARGET]
+
+Options are parsed by flags-2-env (.cli-flags.toml).
+dev: run an Oreslang project once (watch/reload is not implemented).
+build: compiler check + Oreslang source bundle; NOT an executable/native build.
+deploy: always denied until a certified host adapter exists.
+EOF
+  exit 0
+fi
+
+# shell-env emits properly shell-quoted exports, rejects unknown options,
+# and reports structured parse errors with a nonzero exit code.
+if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
+  echo "oreslang-stack: invalid flags-2-env arguments" >&2
+  exit 2
+fi
+eval "$exports"
+
+root="${ORESLANG_STACK_ROOT:-.}"
+entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+
+# A project entrypoint must stay relative to its selected root.
+case "$entry" in
+  ""|/*|..|../*|*/../*|*/..) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+esac
+if [[ ! -d "$root" || -L "$root" ]]; then
+  echo "oreslang-stack: root must be an existing non-symlink directory" >&2
+  exit 2
+fi
+root="$(cd -- "$root" && pwd -P)"
+if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
+  echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
+  exit 2
+fi
+
+# Read-only and env permissions are explicitly scoped. No --allow-all.
+# The .ores program emits exactly one validated action; any other output
+# is a failure, even if the host interpreter exits successfully.
+if ! action="$("$oreslang_bin" --allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND --allow-read="$root" "$cli_home/src/main.ores")"; then
+  echo "oreslang-stack: Oreslang command admission failed" >&2
+  exit 1
+fi
+case "$action" in
+  ORESLANG_STACK_ACTION_v1:dev)
+    exec "$oreslang_bin" --allow-read="$root" "$root/$entry"
+    ;;
+  ORESLANG_STACK_ACTION_v1:build)
+    if ! "$oreslang_bin" --check "$root/$entry"; then
+      echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
+      exit 1
+    fi
+    # Current compiler --build-analysis is NOT a machine-code artifact.
+    # Package only author-owned source, never mislabel it native/deployable.
+    if [[ ! -d "$root/src" || -L "$root/src" ]]; then
+      echo "oreslang-stack: missing or symlinked source directory" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/src" -type l -print -quit)" ]]; then
+      echo "oreslang-stack: symlink inside src refused" >&2
+      exit 1
+    fi
+    if [[ -e "$root/dist" && ( ! -d "$root/dist" || -L "$root/dist" ) ]]; then
+      echo "oreslang-stack: unsafe dist path" >&2
+      exit 1
+    fi
+    mkdir -p -- "$root/dist"
+    artifact="$root/dist/oreslang-stack-source.tar.gz"
+    tmp="$(mktemp "$root/dist/.oreslang-stack.XXXXXXXX")"
+    trap 'rm -f -- "$tmp"' EXIT
+    if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
+      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml .oreslangc.cfg.toml
+    else
+      tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml
+    fi
+    mv -f -- "$tmp" "$artifact"
+    trap - EXIT
+    printf 'Oreslang checked source bundle: %s\n' "$artifact"
+    printf '%s\n' 'This is NOT a compiled, runnable, or deployable artifact.'
+    ;;
+  *)
+    echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
+    exit 1
+    ;;
+esac

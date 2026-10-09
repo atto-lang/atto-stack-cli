@@ -1,0 +1,61 @@
+// The command dispatcher is Oreslang, not Rust.
+// flags-2-env supplies validated command/flag values as environment variables.
+// The POSIX launcher is a host-process bridge, not a second CLI implementation.
+
+fnc admit_project(String root, String entry, String action): void {
+  if !fs.exists(root + "/oreslang-stack.toml"); then
+    stdio.println("ERROR: missing oreslang-stack.toml in project root");
+    return;
+  fi
+
+  if !fs.exists(root + "/" + entry); then
+    stdio.println("ERROR: missing Oreslang entrypoint in project root");
+    return;
+  fi
+
+  // An exact action receipt is consumed by the tiny launcher.
+  // No receipt means no host-side action; printed errors are never success.
+  if action == "dev"; then
+    stdio.println("ORESLANG_STACK_ACTION_v1:dev");
+    return;
+  fi
+  if action == "build"; then
+    stdio.println("ORESLANG_STACK_ACTION_v1:build");
+    return;
+  fi
+  stdio.println("ERROR: unknown requested action");
+  return;
+}
+
+pub routine main(): void {
+  val command = env.get("ORESLANG_STACK_COMMAND");
+  val root = env.get("ORESLANG_STACK_ROOT");
+  val entry = env.get("ORESLANG_STACK_ENTRY");
+  val backend = env.get("ORESLANG_STACK_BACKEND");
+
+  if command == "dev"; then
+    if backend != "graal"; then
+      stdio.println("ERROR: dev requires --backend graal; LLVM runtime is not ready");
+      return;
+    fi
+    admit_project(root, entry, "dev");
+    return;
+  fi
+
+  if command == "build"; then
+    if backend != "graal"; then
+      stdio.println("ERROR: build requires --backend graal; LLVM artifacts are not available");
+      return;
+    fi
+    admit_project(root, entry, "build");
+    return;
+  fi
+
+  if command == "deploy"; then
+    stdio.println("ERROR: deploy denied: no certified Oreslang host adapter or deploy receipt exists");
+    return;
+  fi
+
+  stdio.println("ERROR: expected oreslang-stack dev, build or deploy");
+  return;
+}
