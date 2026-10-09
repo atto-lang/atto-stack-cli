@@ -1,6 +1,7 @@
 // Oreslang-native file-route inventory, RPC and Lambda source adapters.
-// No Rust generator. The Java/Graal stdlib provides scoped fs.list_dir,
-// fs.is_dir, fs.is_symlink and literal string primitives (source.java PR #496).
+// No Rust generator. Java/Graal provides scoped native fs.*_blocking
+// operations which suspend source continuations while I/O executes off-carrier
+// (source.java PR #522), plus literal string primitives.
 //
 // CLI policy: never report a successful operation without a verified action
 // receipt. Host executable invocation remains in the narrow Bash launcher.
