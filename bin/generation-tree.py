@@ -82,7 +82,7 @@ def load_config(root, language):
         fail("expected 1..64 route entries")
     selected = {}
     for row in routes:
-        if not isinstance(row, dict) or set(row) - {"path", "dir", "argv"}:
+        if not isinstance(row, dict) or set(row) - {"path", "dir", "argv", "source_file"}:
             fail("invalid route entry")
         path = row.get("path")
         if not isinstance(path, str) or not path.startswith("/") or ".." in path or "?" in path or "#" in path or "\x00" in path:
@@ -91,13 +91,18 @@ def load_config(root, language):
             fail("duplicate or reserved route")
         directory = row.get("dir")
         folder = safe_relative(root, directory, True)
-        leaf = "route.ores" if language == "oreslang" else "route.rs"
+        default_leaf = "route.ores" if language == "oreslang" else "route.rs"
+        leaf = row.get("source_file", default_leaf)
+        candidates = ("route.ores", "get.ores", "post.ores", "put.ores", "patch.ores",
+                      "delete.ores", "head.ores", "options.ores") if language == "oreslang" else ("route.rs",)
+        if not isinstance(leaf, str) or leaf not in candidates:
+            fail("unadmitted route source_file")
         if not (folder / leaf).is_file() or (folder / leaf).is_symlink():
             fail("missing authored " + leaf + " in route folder")
         command = row.get("argv")
         if command is not None and (not isinstance(command, list) or not command or not all(isinstance(x, str) and x for x in command)):
             fail("route argv must be nonempty array of strings")
-        selected[path] = {"dir": directory, "argv": command}
+        selected[path] = {"dir": directory, "argv": command, "source_file": leaf}
     daddy = config.get("daddy_argv")
     if daddy is not None and (not isinstance(daddy, list) or not daddy or not all(isinstance(x, str) and x for x in daddy)):
         fail("daddy_argv must be nonempty array of strings")
@@ -283,7 +288,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                     last_m = after
                 else:
                     row = routes[key]
-                    leaf = "route.ores" if state["lang"] == "oreslang" else "route.rs"
+                    leaf = row["source_file"]
                     marker = (root / row["dir"] / leaf).read_text()[:256].strip() if fixture else row["dir"]
                     new = spawn_worker(script, root, None if fixture else row["argv"],
                                        "child", marker, state["token"], row["dir"])
@@ -319,7 +324,7 @@ def supervise(args):
              "daddy", mhash, token, middleware)
         started.append(state["daddy"][0])
         for route,row in routes.items():
-            leaf = "route.ores" if args.language == "oreslang" else "route.rs"
+            leaf = row["source_file"]
             marker = (root / row["dir"] / leaf).read_text()[:256].strip() if config.get("fixture_echo") else row["dir"]
             child = spawn_worker(script, root,
                 None if config.get("fixture_echo") else row["argv"],
