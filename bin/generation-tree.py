@@ -41,9 +41,11 @@ def fail(s):
 def safe_relative(root, rel, directory=False):
     if not isinstance(rel, str) or not rel or "\\" in rel or "\x00" in rel:
         fail("invalid relative path")
-    p = pathlib.PurePosixPath(rel)
-    if p.is_absolute() or any(x in (".", "..") for x in p.parts):
+    # PurePosixPath normalizes '.', empty segments, and repeated separators.
+    # Reject those in the original text before constructing a filesystem path.
+    if rel.startswith("/") or any(x in ("", ".", "..") for x in rel.split("/")):
         fail("path must remain within project")
+    p = pathlib.PurePosixPath(rel)
     current = root
     for part in p.parts:
         current /= part
@@ -199,8 +201,9 @@ def await_ready(port, proc, token):
 def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
     port = ephemeral_port()
     if argv is None:
+        # Never put the internal bearer or source-derived marker in process argv.
         cmd = [sys.executable, str(script), "--internal", mode, "--worker-port",
-               str(port), "--token", token, "--marker", marker]
+               str(port)]
     else:
         values = {"{port}": str(port), "{root}": str(root), "{source_dir}": str(root / (source_dir or marker))}
         cmd = []
@@ -210,7 +213,7 @@ def spawn_worker(script, root, argv, mode, marker, token, source_dir=None):
             cmd.append(arg)
     env = {key: os.environ[key] for key in WORKER_ENV_ALLOWLIST if key in os.environ}
     env.update({"ORES_DEV_PORT": str(port), "ORES_DEV_HEALTH_TOKEN": token,
-                "ORES_DEV_ROOT": str(root)})
+                "ORES_DEV_MARKER": marker, "ORES_DEV_ROOT": str(root)})
     with tempfile.TemporaryFile(mode="w+t",encoding="utf-8") as worker_log:
         proc = subprocess.Popen(cmd, cwd=root, env=env, stdin=subprocess.DEVNULL,
                                 stdout=subprocess.DEVNULL, stderr=worker_log,
@@ -504,14 +507,14 @@ def main():
     parser.add_argument("--language", choices=["oreslang","rust"], default="oreslang")
     parser.add_argument("--internal", choices=["child","daddy"])
     parser.add_argument("--worker-port", type=int)
-    parser.add_argument("--token")
-    parser.add_argument("--marker")
     args = parser.parse_args()
     if args.internal:
-        if not args.token or not args.marker or not args.worker_port or not 1024 <= args.worker_port < 65536:
+        token = os.environ.get("ORES_DEV_HEALTH_TOKEN", "")
+        marker = os.environ.get("ORES_DEV_MARKER", "")
+        if not token or not marker or not args.worker_port or not 1024 <= args.worker_port < 65536:
             fail("invalid internal worker arguments")
         server = HttpService(("127.0.0.1", args.worker_port), Worker)
-        server.state = {"mode":args.internal,"token":args.token,"marker":args.marker}
+        server.state = {"mode":args.internal,"token":token,"marker":marker}
         server.serve_forever()
     else:
         supervise(args)
