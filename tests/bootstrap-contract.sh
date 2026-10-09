@@ -15,6 +15,15 @@ if [[ "$1" == "--check" ]]; then
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
+  if [[ "$ORESLANG_STACK_COMMAND" == "routes" || "$ORESLANG_STACK_COMMAND" == "check" ||
+        ( "$ORESLANG_STACK_COMMAND" == "generate" && "$ORESLANG_STACK_CHECK" == "true" ) ]]; then
+    for option in "$@"; do
+      if [[ "$option" == --allow-write=* ]]; then
+        echo "ERROR: read-only command was granted filesystem write access"
+        exit 3
+      fi
+    done
+  fi
   if [[ "$ORESLANG_STACK_BACKEND" != graal ]]; then
     echo 'ERROR: LLVM not supported'
     exit 0
@@ -41,6 +50,8 @@ test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslang-stack-run"
 "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/project" | grep -F 'generated'
+"$repo/bin/oreslang-stack" generate --kind all --check --root "$tmp/project" | grep -F 'generated'
+env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
@@ -48,6 +59,15 @@ printf 'do-not-include\n' > "$tmp/project/src/.env"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" >/dev/null
 if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.env'; then
   echo "bundle must not contain .env secrets" >&2
+  exit 1
+fi
+printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/other.ores"
+"$repo/bin/oreslang-stack" build --root "$tmp/project" --entry src/other.ores >/dev/null
+tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-entry | grep -Fx 'src/other.ores'
+rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+mkdir "$tmp/project/dist/oreslang-stack-source.tar.gz"
+if "$repo/bin/oreslang-stack" build --root "$tmp/project"; then
+  echo "directory destination must be rejected" >&2
   exit 1
 fi
 if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/../escape.ores; then
