@@ -343,12 +343,18 @@ class Worker(http.server.BaseHTTPRequestHandler):
             headers["X-Ores-Middleware-Hash"] = state["marker"]
             return self.send(status, headers, body)
         with state["lock"]:
-            item = state["children"].get(urllib.parse.urlsplit(self.path).path)
+            route_path = urllib.parse.urlsplit(self.path).path
+            item = state["children"].get(route_path)
             daddy = state["daddy"]
+            # A single immutable admission snapshot accompanies this request,
+            # even if both middleware and route generations change in flight.
+            incarnation = ("d" + str(state["daddy_generation"]) + ":c" +
+                           str(state["child_generations"].get(route_path, 0)))
         if item is None: return self.send(404, {}, b"route not found")
         try: status, headers, body = forwarded(daddy[1], self, state["token"], item[1])
         except Exception: return self.send(502, {}, b"middleware unavailable")
         headers["X-Ores-Grandaddy-PID"] = str(os.getpid())
+        headers["X-Ores-Generation"] = incarnation
         return self.send(status, headers, body)
 
 def monitor(state, script, root, middleware, routes, fixture):
@@ -411,6 +417,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                     with state["lock"]:
                         old = state["daddy"]
                         state["daddy"] = new
+                        state["daddy_generation"] += 1
                     last_m = after
                 else:
                     row = routes[key]
@@ -427,6 +434,7 @@ def monitor(state, script, root, middleware, routes, fixture):
                     with state["lock"]:
                         old = state["children"][key]
                         state["children"][key] = new
+                        state["child_generations"][key] += 1
                     last[key] = after
                 threading.Thread(target=lambda p:(time.sleep(.6), stop(p)),
                                  args=(old[0],), daemon=True).start()
@@ -447,6 +455,7 @@ def supervise(args):
     script = pathlib.Path(__file__).resolve()
     state = {"mode":"grandaddy", "token":token, "children":{}, "daddy":None,
              "daddy_argv":config.get("daddy_argv"), "lang":args.language,
+             "daddy_generation":0, "child_generations":{route:0 for route in routes},
              "stop":threading.Event(), "lock":threading.Lock()}
     started = []
     try:
