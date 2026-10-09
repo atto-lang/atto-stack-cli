@@ -38,6 +38,7 @@ export ORESLANG_BIN="$tmp/fake-oreslang"
 test "$("$repo/bin/oreslang-stack" dev --root "$tmp/project")" = "app started"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" | grep -F 'NOT a compiled'
 test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"
+tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslang-stack-run"
 "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/project" | grep -F 'generated'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
