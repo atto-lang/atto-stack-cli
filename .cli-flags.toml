@@ -33,6 +33,17 @@ type = "string"
 default = "graal"
 help = "graal is implemented for dev and source-bundle build; llvm fails closed."
 
+
+[commands.init]
+env = "ORESLANG_STACK_COMMAND_INIT"
+help = "Initialize a new Oreslang API or web stack without replacing existing files."
+
+[commands.init.flags.role]
+env = "ORESLANG_STACK_ROLE"
+aliases = ["role"]
+type = "string"
+help = "Required stack role: api, admin-api, web or admin-web."
+
 [commands.routes]
 env = "ORESLANG_STACK_COMMAND_ROUTES"
 help = "Read source-tree routes and print canonical route manifest."
