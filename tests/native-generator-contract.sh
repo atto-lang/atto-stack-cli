@@ -119,4 +119,61 @@ sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/rou
 sha256sum "$tmp/orphan-adapter/src/routes/rpc.ores" "$tmp/orphan-adapter/src/routes/lambda.ores" "$tmp/orphan-adapter/generated/route-manifest.json" > "$tmp/after.sha"
 cmp "$tmp/before.sha" "$tmp/after.sha"
 
+# New-org adoption: exercise every supported role with the real runtime.
+for role in api admin-api web admin-web; do
+  root="$tmp/init-$role"
+  mkdir -p "$root"
+  printf 'keep me\n' > "$root/README.md"
+  "$cli" init --root "$root" --role "$role"
+  grep -Fx "role = \"$role\"" "$root/oreslang-stack.toml"
+  grep -Fx "keep me" "$root/README.md"
+  "$cli" generate --kind all --check --root "$root"
+  "$cli" check --root "$root"
+  "$cli" routes --root "$root" | grep -F "\"role\": \"$role\""
+  if [[ "$role" == api || "$role" == admin-api ]]; then
+    test -f "$root/src/routes/route.ores"
+    test -f "$root/src/routes/handlers.ores"
+    test -f "$root/src/routes/rpc.ores"
+    test -f "$root/src/routes/lambda.ores"
+  else
+    test -f "$root/src/pages/page.ores"
+    test -f "$root/src/pages/lambda.ores"
+    test ! -e "$root/src/pages/rpc.ores"
+  fi
+  if "$cli" init --root "$root" --role "$role"; then
+    echo "second init must refuse existing $role tree" >&2
+    exit 1
+  fi
+done
+
+mkdir -p "$tmp/init-unsafe/src"
+printf 'unowned\n' > "$tmp/init-unsafe/src/main.ores"
+if "$cli" init --root "$tmp/init-unsafe" --role api; then
+  echo "init must not overwrite existing source trees" >&2
+  exit 1
+fi
+grep -Fx 'unowned' "$tmp/init-unsafe/src/main.ores"
+
+mkdir -p "$tmp/init-bad-role"
+if "$cli" init --root "$tmp/init-bad-role" --role other; then
+  echo "unrecognized init role must fail" >&2
+  exit 1
+fi
+test ! -e "$tmp/init-bad-role/src"
+
+mkdir -p "$tmp/init-manifest-collision"
+printf 'keep = true\n' > "$tmp/init-manifest-collision/oreslang-stack.toml"
+if "$cli" init --root "$tmp/init-manifest-collision" --role web; then
+  echo "init must not touch foreign manifest" >&2
+  exit 1
+fi
+grep -Fx 'keep = true' "$tmp/init-manifest-collision/oreslang-stack.toml"
+
+mkdir -p "$tmp/init-symlink"
+ln -s "$tmp/api/src" "$tmp/init-symlink/src"
+if "$cli" init --root "$tmp/init-symlink" --role api; then
+  echo "init must refuse symlinked source destination" >&2
+  exit 1
+fi
+
 echo "native Oreslang generator integration checks passed"
