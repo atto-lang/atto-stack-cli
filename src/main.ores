@@ -62,7 +62,8 @@ fnc repository_role(String root): String {
 }
 
 fnc is_api(String role): bool {
-  return role == "api" | role == "admin-api";
+  if role == "api" | role == "admin-api"; then return true; fi
+  return false;
 }
 
 fnc route_path(String route, String segment): String {
@@ -114,9 +115,12 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
 }
 
 fnc http_method(String method): bool {
-  return method == "GET" | method == "POST" | method == "PUT" |
+  if method == "GET" | method == "POST" | method == "PUT" |
     method == "PATCH" | method == "DELETE" | method == "HEAD" |
-    method == "OPTIONS";
+    method == "OPTIONS"; then
+    return true;
+  fi
+  return false;
 }
 
 // On success returns newline-terminated manifest row(s).
@@ -251,12 +255,22 @@ fnc walk(String root, String dir, String url, String shape,
       result = result + nested;
     else
       if name == "rpc.ores" | name == "lambda.ores"; then
-        val targeted = kind == "all" |
+        let bool targeted = false;
+        if kind == "all" |
           (kind == "rpc" ? name == "rpc.ores" : false) |
-          (kind == "lambda" ? name == "lambda.ores" : false);
-        val valid = has_leaf ?
-          (api ? (name == "rpc.ores" | name == "lambda.ores") : name == "lambda.ores") :
-          false;
+          (kind == "lambda" ? name == "lambda.ores" : false); then
+          targeted = true;
+        fi
+        let bool valid = false;
+        if has_leaf; then
+          if api; then
+            if name == "rpc.ores" | name == "lambda.ores"; then
+              valid = true;
+            fi
+          else
+            if name == "lambda.ores"; then valid = true; fi
+          fi
+        fi
         if targeted, !valid; then
           val old = fs.read_text(child);
           if !old.starts_with(GENERATED); then
