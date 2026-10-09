@@ -146,8 +146,8 @@ def ephemeral_port():
 def stop(proc):
     if proc is None:
         return
-    # The group leader may have already exited while an owned grandchild
-    # is still alive. Never treat proc.poll() as proof that its group died.
+    # A worker can spawn compilers or actors and exit before its descendants.
+    # Always terminate the owned process group, even when its leader is dead.
     if os.name == "posix":
         try:
             os.killpg(proc.pid, signal.SIGTERM)
@@ -157,8 +157,8 @@ def stop(proc):
             proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             pass
-        # Descendants may ignore TERM even if the leader exited.
-        time.sleep(.05)
+        # Escalate for children that ignored TERM. The process group survives
+        # its leader when descendants remain; a mere proc.poll() is insufficient.
         try:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
@@ -167,11 +167,13 @@ def stop(proc):
             proc.wait(timeout=2)
         except subprocess.TimeoutExpired:
             pass
-    elif proc.poll() is None:
+    else:
+        if proc.poll() is not None:
+            return
         try:
             proc.terminate()
             proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
+        except (OSError, subprocess.TimeoutExpired):
             proc.kill()
             proc.wait(timeout=2)
 
