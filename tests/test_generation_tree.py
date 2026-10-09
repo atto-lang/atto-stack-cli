@@ -72,6 +72,21 @@ class GenerationalReloadContract(unittest.TestCase):
                 self.assertEqual(body2, b"two-v1")
                 self.assertEqual(p1[:2], p2[:2])
                 self.assertEqual(request("/unknown")[0], 404)
+                # Ambiguous request framing must fail before proxying to daddy.
+                with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
+                    raw.sendall(
+                        b"GET /one HTTP/1.1\r\nHost: localhost\r\n"
+                        b"Content-Length: 1\r\nContent-Length: 2\r\n\r\n"
+                    )
+                    self.assertIn(b" 400 ", raw.recv(128))
+                with socket.create_connection(("127.0.0.1", port), timeout=2) as raw:
+                    raw.sendall(
+                        b"GET /one HTTP/1.1\r\nHost: localhost\r\n"
+                        b"Transfer-Encoding: chunked\r\n\r\n"
+                    )
+                    self.assertIn(b" 400 ", raw.recv(128))
+                self.assertEqual(request("/" + "x" * 3000)[0], 414)
+                self.assertEqual(snap("/one")[0], p1)
                 # Only the directly affected route child rotates.
                 first.write_text("one-v2")
                 deadline = time.monotonic() + 8
