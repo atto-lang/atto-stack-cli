@@ -55,6 +55,30 @@ class IdempotentProcessGroupStop(unittest.TestCase):
         self.assertEqual(kill.call_count, 2, "concurrent callers signaled a recycled group")
 
 
+
+class ErrorIncarnationContract(unittest.TestCase):
+    def test_proxy_transport_failure_still_reports_admitted_generation(self):
+        handler = object.__new__(TREE.Worker)
+        handler.path = "/a"
+        handler.server = types.SimpleNamespace(state={
+            "mode": "grandaddy", "token": "test-token",
+            "lock": threading.Lock(),
+            "daddy": (types.SimpleNamespace(), 8123),
+            "children": {"/a": (types.SimpleNamespace(), 8124)},
+            "daddy_generation": 3,
+            "child_generations": {"/a": 7}
+        })
+        handler.send = mock.Mock()
+        with mock.patch.object(TREE, "forwarded", side_effect=ConnectionRefusedError):
+            handler.dispatch()
+        status, headers, body = handler.send.call_args.args
+        self.assertEqual(status, 502)
+        self.assertEqual(headers["X-Ores-Generation"], "d3:c7")
+        self.assertEqual(headers["X-Ores-Grandaddy-PID"], str(os.getpid()))
+        self.assertEqual(body, b"middleware unavailable")
+
+
+
 @unittest.skipUnless(os.name == "posix", "supervisor requires POSIX")
 class SettledGenerationContract(unittest.TestCase):
     def exercise(self, language):
