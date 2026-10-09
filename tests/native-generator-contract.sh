@@ -224,4 +224,55 @@ for role in infra lambdas; do
   fi
 done
 
+# Candidate profiles must never coexist or acquire a generated-adapter tree.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  other=infra
+  if [[ "$role" == infra ]]; then other=lambdas; fi
+  printf '[candidate]\nrole = "%s"\ndeployable = false\n' "$other" \
+    > "$root/.oreslang-stack-$other.candidate.toml"
+  if "$cli" check --root "$root"; then
+    echo "cross-role candidate manifest must invalidate $role" >&2
+    exit 1
+  fi
+  rm "$root/.oreslang-stack-$other.candidate.toml"
+  "$cli" check --root "$root" >/dev/null
+  mkdir -p "$root/generated"
+  if "$cli" check --root "$root"; then
+    echo "candidate $role must reject generated artifact directory" >&2
+    exit 1
+  fi
+  rmdir "$root/generated"
+  "$cli" check --root "$root" >/dev/null
+done
+
+# Project role parser must reject duplicate section declarations, including
+# duplicate sections that omit a second role. Otherwise governance may be
+# interpreted inconsistently by TOML and permissive line-oriented parsers.
+cp -R "$repo/examples/hello-api" "$tmp/duplicate-section"
+printf '\n[repository]\n# no duplicate role\n' >> "$tmp/duplicate-section/oreslang-stack.toml"
+if "$cli" routes --root "$tmp/duplicate-section"; then
+  echo "duplicate repository section must fail" >&2
+  exit 1
+fi
+if "$cli" generate --kind all --root "$tmp/duplicate-section"; then
+  echo "duplicate repository section must not generate sources" >&2
+  exit 1
+fi
+test ! -e "$tmp/duplicate-section/src/routes/rpc.ores"
+
+# Missing candidate source or symlinked candidate manifest cannot pass check.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  candidate="$root/.oreslang-stack-$role.candidate.toml"
+  mv "$candidate" "$candidate.saved"
+  ln -s "$candidate.saved" "$candidate"
+  if "$cli" check --root "$root"; then
+    echo "candidate symlink must be rejected" >&2
+    exit 1
+  fi
+  rm "$candidate"
+  mv "$candidate.saved" "$candidate"
+done
+
 echo "native Oreslang generator integration checks passed"
