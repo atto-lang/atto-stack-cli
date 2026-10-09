@@ -92,6 +92,23 @@ before it can replace its predecessor. Invalid source code leaves the
 last healthy route generation serving. Tests use SIGKILL and compare
 actual PIDs and HTTP bodies before/after the swap.
 
+## Monotonic request generation evidence
+
+Each request handled by grandaddy captures one atomic middleware + route
+incarnation pair and includes `X-Ores-Generation: dN:cM` on successful
+responses, where N increments when daddy is replaced and M increments when
+the selected route worker is replaced. Source edits and worker crashes
+increment only the relevant generation. An unaffected route keeps its
+child generation while seeing newer middleware generations.
+
+The pair is scoped to the lifetime of one grandaddy process; it is not a
+globally monotonic distributed fencing token and must **not** authorize
+deployments, prevent database writes, or replace an actor mailbox fencing
+protocol. The HTTP host is still local developer tooling.
+
+Worker teardown targets its entire owned POSIX process group, even if
+the leader exited while a compiler or actor descendant remains.
+
 ## Audit boundaries and parity gaps
 
 This is a developer-local, explicitly opted-in process supervisor.
