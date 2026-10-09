@@ -54,6 +54,14 @@ if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
   echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
   exit 2
 fi
+if ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
+  echo "oreslang-stack: entrypoint parent is missing" >&2
+  exit 2
+fi
+case "$entry_parent" in
+  "$root"|"$root"/*) ;;
+  *) echo "oreslang-stack: entrypoint path escapes project root" >&2; exit 2 ;;
+esac
 
 # Read-only and env permissions are explicitly scoped. No --allow-all.
 # The .ores program emits exactly one validated action; any other output
@@ -89,6 +97,10 @@ case "$action" in
     artifact="$root/dist/oreslang-stack-source.tar.gz"
     tmp="$(mktemp "$root/dist/.oreslang-stack.XXXXXXXX")"
     trap 'rm -f -- "$tmp"' EXIT
+    if [[ -L "$root/.oreslangc.cfg.toml" ]]; then
+      echo "oreslang-stack: project compiler manifest symlink refused" >&2
+      exit 1
+    fi
     if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
       tar -C "$root" -czf "$tmp" -- src oreslang-stack.toml .oreslangc.cfg.toml
     else
