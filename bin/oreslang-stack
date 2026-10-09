@@ -72,7 +72,12 @@ entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 
 # A project entrypoint must stay relative to its selected root.
 case "$entry" in
-  ""|/*|..|../*|*/../*|*/..) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+  ""|/*|..|../*|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+esac
+# Bundled builds must include their entrypoint; restrict it to src/.
+case "$entry" in
+  src/*) ;;
+  *) echo "oreslang-stack: entrypoint must be below src/" >&2; exit 2 ;;
 esac
 if [[ ! -d "$root" || -L "$root" ]]; then
   echo "oreslang-stack: root must be an existing non-symlink directory" >&2
@@ -227,6 +232,7 @@ case "$action" in
     done < "$file_list"
     rm -f "$file_list"
     cp "$root/oreslang-stack.toml" "$stage/oreslang-stack.toml"
+    printf '%s\n' "$entry" > "$stage/.oreslang-stack-entry"
     cp "$root/generated/route-manifest.json" "$stage/generated/route-manifest.json"
     cp "$cli_home/bin/oreslang-stack-run" "$stage/bin/oreslang-stack-run"
     if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
