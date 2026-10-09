@@ -102,6 +102,13 @@ class RealLanguageWorkerContract(unittest.TestCase):
                 self.assertEqual(current[:2],a[:2])
                 self.assertNotEqual(current[2],a[2])
                 self.assertEqual(snap("/b")[0],b)
+                # Wait beyond the old-generation drain period; this is a
+                # stability assertion, not a way to ignore a second restart.
+                time.sleep(1.1)
+                settled, settled_body, _ = snap("/a")
+                self.assertEqual(settled, current,
+                    "route child restarted a second time without new source")
+                self.assertEqual(settled_body,b"a-v2")
                 # Middleware change recompiles/reexecutes only daddy source.
                 middleware.write_text(source_for(language,"middleware-v2"))
                 deadline=time.monotonic()+10
