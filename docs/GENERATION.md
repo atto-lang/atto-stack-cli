@@ -6,7 +6,7 @@ wrapper code and drift checks **in Oreslang**, not Rust.
 
 ## Source authority
 
-API roles `api` and `admin-api` use `src/routes/**/route.ores` with sibling
+API roles `api` and `admin-api` use `src/routes/rest/**/route.ores` with sibling
 `handlers.ores`. A valid declaration:
 
 ```ores
@@ -20,7 +20,7 @@ pub fnc show(String request) -> String {
 The handler must be a public String request -> String response function.
 Each distinct method in the same route must have a distinct exported symbol.
 
-Web roles `web` and `admin-web` use `src/pages/**/page.ores`:
+Web roles `web` and `admin-web` use `src/pages/root/**/page.ores`:
 
 ```ores
 // @ores-page /users/{id} render
