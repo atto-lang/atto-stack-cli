@@ -92,13 +92,13 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
   fi
   if fs.exists(path); then
     val previous = fs.read_text(path);
-    if path.ends_with(".ores") & !previous.starts_with(GENERATED); then
+    if path.ends_with(".ores"), !previous.starts_with(GENERATED); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
-    if path.ends_with(".json") & !previous.contains_literal("\"schema\": \"oreslang.stack.inventory/v1\""); then
+    if path.ends_with(".json"), !previous.contains_literal("\"schema\": \"oreslang.stack.inventory/v1\""); then
       return error("refusing to overwrite unowned route manifest: " + path);
     fi
-    if check & previous != generated; then
+    if check, previous != generated; then
       return error("stale generated output: " + path);
     fi
     if previous == generated; then
@@ -107,7 +107,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
   else
     if check; then return error("missing generated output: " + path); fi
   fi
-  if !dry & !check; then
+  if !dry, !check; then
     fs.write_text(path, generated);
   fi
   return "";
@@ -176,7 +176,7 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
     // Generated Lambda uses the generated RPC module. No implicit creation
     // when only "lambda" was requested.
     val rpc_status = sync_one(dir + "/rpc.ores", rpc, true, true);
-    if kind == "lambda" & is_error(rpc_status); then
+    if kind == "lambda", is_error(rpc_status); then
       return error("Lambda requires current RPC adapter: " + dir);
     fi
     val status = sync_one(dir + "/lambda.ores", lambda, check, dry);
@@ -249,11 +249,13 @@ fnc walk(String root, String dir, String url, String shape,
       result = result + nested;
     else
       if name == "rpc.ores" | name == "lambda.ores"; then
-        val targeted = kind == "all" | (kind == "rpc" & name == "rpc.ores") |
-          (kind == "lambda" & name == "lambda.ores");
-        val valid = has_leaf & ((api & (name == "rpc.ores" | name == "lambda.ores")) |
-          (!api & name == "lambda.ores"));
-        if targeted & !valid; then
+        val targeted = kind == "all" |
+          !(kind != "rpc" | name != "rpc.ores") |
+          !(kind != "lambda" | name != "lambda.ores");
+        val valid = !(!has_leaf |
+          !(!( !api | !(name == "rpc.ores" | name == "lambda.ores")) |
+            !(api | name != "lambda.ores")));
+        if targeted, !valid; then
           val old = fs.read_text(child);
           if !old.starts_with(GENERATED); then
             return error("unowned adapter in route tree: " + child);
@@ -316,10 +318,10 @@ fnc generate(String root, String role, String kind, bool check): String {
   if kind == "all"; then
     val parent = root + "/generated";
     if fs.is_symlink(parent); then return error("generated manifest parent is symlink"); fi
-    if fs.exists(parent) & !fs.is_dir(parent); then
+    if fs.exists(parent), !fs.is_dir(parent); then
       return error("generated manifest parent is not a directory");
     fi
-    if !fs.exists(parent) & !check; then fs.mkdir_all(parent); fi
+    if !fs.exists(parent), !check; then fs.mkdir_all(parent); fi
     val state = sync_one(parent + "/route-manifest.json", manifest, check, false);
     if is_error(state); then return state; fi
   fi
@@ -374,7 +376,7 @@ pub routine main(): void {
     return;
   fi
   val result = admission(root, entry, command);
-  if command == "routes" & !is_error(result); then
+  if command == "routes", !is_error(result); then
     stdio.println("ORESLANG_STACK_JSON_v1:" + result);
   else
     stdio.println(result);
