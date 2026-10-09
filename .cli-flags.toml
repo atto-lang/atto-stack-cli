@@ -33,20 +33,31 @@ type = "string"
 default = "graal"
 help = "graal is implemented for dev and source-bundle build; llvm fails closed."
 
+
+[commands.init]
+env = "ORESLANG_STACK_COMMAND_INIT"
+help = "Initialize a new Oreslang API or web stack without replacing existing files."
+
+[commands.init.flags.role]
+env = "ORESLANG_STACK_ROLE"
+aliases = ["role"]
+type = "string"
+help = "Required stack role: api, admin-api, web, admin-web, infra, or lambdas (candidate-only)."
+
 [commands.routes]
 env = "ORESLANG_STACK_COMMAND_ROUTES"
 help = "Read source-tree routes and print canonical route manifest."
 
 [commands.generate]
 env = "ORESLANG_STACK_COMMAND_GENERATE"
-help = "Generate canonical RPC/Lambda sibling adapters from Oreslang sources."
+help = "Generate canonical RPC/Lambda/GraphQL sibling adapters from Oreslang sources."
 
 [commands.generate.flags.kind]
 env = "ORESLANG_STACK_KIND"
 aliases = ["kind"]
 type = "string"
 default = "all"
-help = "Generate all, rpc or lambda (web routes only support lambda)."
+help = "Generate all, rpc, lambda or graphql (web routes only support lambda)."
 
 [commands.generate.flags.check]
 env = "ORESLANG_STACK_CHECK"

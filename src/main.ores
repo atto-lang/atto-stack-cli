@@ -43,15 +43,17 @@ fnc repository_role(String root): String {
   val lines = fs.read_text(path).split_literal("\n");
   let String section = "";
   let String role = "";
+  let bool seen_repository = false;
   for const raw of lines {
     val String line = raw.trim();
     if line == "" | line.starts_with("#"); then
       continue;
     fi
     if line.starts_with("["); then
-      if line != "[repository]"; then
-        return error("unsupported oreslang-stack.toml section");
+      if line != "[repository]" | seen_repository; then
+        return error("unsupported or duplicate oreslang-stack.toml section");
       fi
+      seen_repository = true;
       section = "repository";
     else
       val parts = line.split_literal("=");
@@ -65,7 +67,9 @@ fnc repository_role(String root): String {
   if role == "\"admin-api\""; then return "admin-api"; fi
   if role == "\"web\""; then return "web"; fi
   if role == "\"admin-web\""; then return "admin-web"; fi
-  return error("invalid repository role; expected api|admin-api|web|admin-web");
+  if role == "\"infra\""; then return "infra"; fi
+  if role == "\"lambdas\""; then return "lambdas"; fi
+  return error("invalid repository role; expected api|admin-api|web|admin-web|infra|lambdas");
 }
 
 fnc is_api(String role): bool {
@@ -100,7 +104,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
   fi
   if fs.exists(path); then
     val String previous = fs.read_text(path);
-    if path.ends_with(".ores"), !previous.starts_with(generated_marker()); then
+    if path.ends_with(".ores") | path.ends_with(".graphql"), !previous.starts_with(generated_marker()); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
     if path.ends_with(".json"), !previous.starts_with("{\n  \"schema\": \"oreslang.stack.inventory/v1\""); then
@@ -145,6 +149,11 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   let String manifest = "";
   let String rpc = generated_marker() + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\ndefine module rpc as\n";
   let String lambda = generated_marker() + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\ndefine module lambda as\n";
+  let String graphql = generated_marker() + "// GraphQL resolver scaffold only; no parser, validation or HTTP server.\nimport module rpc from \"./rpc\";\n\ndefine module graphql as\n";
+  let String schema_query = generated_marker() + "type Query {\n";
+  let String schema_mutation = generated_marker() + "type Mutation {\n";
+  let bool has_query = false;
+  let bool has_mutation = false;
   let String seen = "|";
   let count = 0;
   for const raw of source.split_literal("\n") {
@@ -171,6 +180,14 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
     seen = seen + method + "|@" + symbol + "|";
     rpc = rpc + "pub fnc rpc_" + symbol + "(String request) -> String {\n  return route." + symbol + "(request);\n}\n\n";
     lambda = lambda + "pub fnc invoke_" + symbol + "(String request) -> String {\n  return rpc.rpc_" + symbol + "(request);\n}\n\n";
+    graphql = graphql + "pub fnc resolve_" + symbol + "(String request) -> String {\n  return rpc.rpc_" + symbol + "(request);\n}\n\n";
+    if method == "GET"; then
+      schema_query = schema_query + "  " + symbol + "(request: String!): String!\n";
+      has_query = true;
+    else
+      schema_mutation = schema_mutation + "  " + symbol + "(request: String!): String!\n";
+      has_mutation = true;
+    fi
     manifest = manifest + "@J|{\"kind\":\"route\",\"method\":" + quote_json(method) +
       ",\"path\":" + quote_json(url) +
       ",\"handler\":" + quote_json(symbol) +
@@ -180,10 +197,24 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   if count == 0; then return error("no @ores-route declarations: " + path); fi
   rpc = rpc + "end\n";
   lambda = lambda + "end\n";
+  graphql = graphql + "end\n";
+  let String graphql_schema = "";
+  if has_query; then graphql_schema = schema_query + "}\n"; fi
+  if has_mutation; then graphql_schema = graphql_schema + schema_mutation + "}\n"; fi
 
   if kind == "all" | kind == "rpc"; then
     val String status = sync_one(dir + "/rpc.ores", rpc, check, dry);
     if is_error(status); then return status; fi
+  fi
+  if kind == "all" | kind == "graphql"; then
+    val String rpc_status = sync_one(dir + "/rpc.ores", rpc, true, true);
+    if kind == "graphql", is_error(rpc_status); then
+      return error("GraphQL requires current RPC adapter: " + dir);
+    fi
+    val String resolver_status = sync_one(dir + "/graphql.ores", graphql, check, dry);
+    if is_error(resolver_status); then return resolver_status; fi
+    val String schema_status = sync_one(dir + "/graphql.graphql", graphql_schema, check, dry);
+    if is_error(schema_status); then return schema_status; fi
   fi
   if kind == "all" | kind == "lambda"; then
     // Generated Lambda uses the generated RPC module. No implicit creation
@@ -199,8 +230,8 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
 }
 
 fnc web_leaf(String root, String dir, String url, String kind, bool check, bool dry): String {
-  if kind == "rpc"; then
-    return error("web pages do not produce RPC operations");
+  if kind == "rpc" | kind == "graphql"; then
+    return error("web pages do not produce RPC or GraphQL operations");
   fi
   val String path = dir + "/page.ores";
   if fs.is_symlink(path); then return error("symlinked page source: " + path); fi
@@ -264,15 +295,18 @@ fnc walk(String root, String dir, String url, String shape,
       if is_error(nested); then return nested; fi
       result = result + nested;
     else
-      if name == "rpc.ores" | name == "lambda.ores"; then
+      if name == "rpc.ores" | name == "lambda.ores" |
+         name == "graphql.ores" | name == "graphql.graphql"; then
         let bool targeted = false;
         if kind == "all"; then targeted = true; fi
         if kind == "rpc", name == "rpc.ores"; then targeted = true; fi
         if kind == "lambda", name == "lambda.ores"; then targeted = true; fi
+        if kind == "graphql", name == "graphql.ores" | name == "graphql.graphql"; then targeted = true; fi
         let bool valid = false;
         if has_leaf; then
           if api; then
-            if name == "rpc.ores" | name == "lambda.ores"; then
+            if name == "rpc.ores" | name == "lambda.ores" |
+              name == "graphql.ores" | name == "graphql.graphql"; then
               valid = true;
             fi
           else
@@ -327,11 +361,11 @@ fnc route_manifest(String root, String role, String kind, bool check, bool dry):
 }
 
 fnc generate(String root, String role, String kind, bool check): String {
-  if kind != "all", kind != "rpc", kind != "lambda"; then
-    return error("generate expects all|rpc|lambda");
+  if kind != "all", kind != "rpc", kind != "lambda", kind != "graphql"; then
+    return error("generate expects all|rpc|lambda|graphql");
   fi
-  if !is_api(role), kind == "rpc"; then
-    return error("web pages do not produce RPC operations");
+  if !is_api(role), kind == "rpc" | kind == "graphql"; then
+    return error("web pages do not produce RPC or GraphQL operations");
   fi
   // Phase 1: validate every source and pre-existing artifact before writes.
   val String inspected = route_manifest(root, role, kind, false, true);
@@ -365,12 +399,122 @@ fnc generate(String root, String role, String kind, bool check): String {
   return "";
 }
 
+// Create only a fresh stack project. An existing src/, generated/ or
+// project manifest is a collision, never permission to migrate/overwrite.
+fnc init_project(String root, String entry, String role): String {
+  if entry != "src/main.ores"; then
+    return error("init requires the default src/main.ores entrypoint");
+  fi
+  if role != "api", role != "admin-api", role != "web", role != "admin-web",
+    role != "infra", role != "lambdas"; then
+    return error("init expects --role api|admin-api|web|admin-web|infra|lambdas");
+  fi
+  val String manifest = root + "/oreslang-stack.toml";
+  val String source_root = root + "/src";
+  val String generated_root = root + "/generated";
+  val String infra_candidate = root + "/.oreslang-stack-infra.candidate.toml";
+  val String lambda_candidate = root + "/.oreslang-stack-lambdas.candidate.toml";
+  if fs.exists(infra_candidate) | fs.is_symlink(infra_candidate) |
+    fs.exists(lambda_candidate) | fs.is_symlink(lambda_candidate); then
+    return error("init refuses existing stack candidate manifest");
+  fi
+  if fs.exists(manifest) | fs.is_symlink(manifest) |
+    fs.exists(source_root) | fs.is_symlink(source_root) |
+    fs.exists(generated_root) | fs.is_symlink(generated_root); then
+    return error("init refuses existing manifest, src or generated paths");
+  fi
+
+  val bool api = is_api(role);
+  val String route_dir = source_root + (api ? "/routes" : "/pages");
+  if role == "infra"; then
+    fs.mkdir_all(source_root + "/infra");
+  else
+    if role == "lambdas"; then
+      fs.mkdir_all(source_root + "/functions/hello");
+    else
+      fs.mkdir_all(route_dir);
+    fi
+  fi
+  fs.write_text_atomic(manifest, "[repository]\nrole = \"" + role + "\"\n");
+  fs.write_text_atomic(source_root + "/main.ores",
+    "pub routine main(): void {\n  stdio.println(\"hello from Oreslang stack\");\n  return;\n}\n");
+  if role == "infra"; then
+    // Candidate-only: this is not Terraform/Crossplane provisioning.
+    fs.write_text_atomic(infra_candidate,
+      "[candidate]\nrole = \"infra\"\ndeployable = false\n");
+    fs.write_text_atomic(source_root + "/infra/config.ores",
+      "define module infra_candidate as\n" +
+      "  pub fnc status(): String { return \"not-deployable\"; }\nend\n");
+    return "ORESLANG_STACK_ACTION_v1:initialized";
+  fi
+  if role == "lambdas"; then
+    // No provider runtime, compiled bootstrap or zip artifact is implied.
+    fs.write_text_atomic(lambda_candidate,
+      "[candidate]\nrole = \"lambdas\"\ndeployable = false\n");
+    fs.write_text_atomic(source_root + "/functions/hello/handler.ores",
+      "define module handler as\n" +
+      "  pub fnc invoke(String event): String { return event; }\nend\n");
+    return "ORESLANG_STACK_ACTION_v1:initialized";
+  fi
+  if api; then
+    fs.write_text_atomic(route_dir + "/handlers.ores",
+      "define module handlers as\n  pub fnc greet(String request) -> String {\n    return request;\n  }\nend\n");
+    fs.write_text_atomic(route_dir + "/route.ores",
+      "// @ores-route GET / greet\nimport module handlers from \"./handlers\";\n\n" +
+      "define module route as\n  pub fnc greet(String request) -> String {\n" +
+      "    return handlers.greet(request);\n  }\nend\n");
+  else
+    fs.write_text_atomic(route_dir + "/page.ores",
+      "// @ores-page / render\ndefine module page as\n" +
+      "  pub fnc render(String request) -> String {\n" +
+      "    return \"<main>Hello from Oreslang</main>\";\n  }\nend\n");
+  fi
+
+  val String status = generate(root, role, "all", false);
+  if is_error(status); then return status; fi
+  return "ORESLANG_STACK_ACTION_v1:initialized";
+}
+
 fnc admission(String root, String entry, String action): String {
   val String role = repository_role(root);
   if is_error(role); then return role; fi
   val String entry_path = root + "/" + entry;
   if fs.is_symlink(entry_path) | !fs.exists(entry_path); then
     return error("missing or symlinked Oreslang application entrypoint");
+  fi
+  if role == "infra" | role == "lambdas"; then
+    if action == "check"; then
+      val String candidate = role == "infra" ?
+        root + "/.oreslang-stack-infra.candidate.toml" :
+        root + "/.oreslang-stack-lambdas.candidate.toml";
+      if fs.is_symlink(candidate) | !fs.exists(candidate); then
+        return error("missing or symlinked non-deployable candidate manifest");
+      fi
+      val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
+      if fs.read_text(candidate) != expected; then
+        return error("candidate manifest drift or deployable policy changed");
+      fi
+      val String sibling = role == "infra" ?
+        root + "/.oreslang-stack-lambdas.candidate.toml" :
+        root + "/.oreslang-stack-infra.candidate.toml";
+      if fs.exists(sibling) | fs.is_symlink(sibling); then
+        return error("mixed infra/lambda candidate manifests denied");
+      fi
+      if fs.exists(root + "/generated") | fs.is_symlink(root + "/generated"); then
+        return error("infra/lambdas may not claim generated adapters");
+      fi
+      if fs.exists(root + "/src/routes") | fs.exists(root + "/src/pages"); then
+        return error("infra/lambdas cannot silently contain API/web routes");
+      fi
+      val String marker = role == "infra" ?
+        root + "/src/infra/config.ores" :
+        root + "/src/functions/hello/handler.ores";
+      if fs.is_symlink(marker) | !fs.exists(marker); then
+        return error("missing or symlinked candidate Oreslang source");
+      fi
+      return "ORESLANG_STACK_ACTION_v1:check";
+    fi
+    return error("infra/lambdas only support init and compile check; deployment and runtime adapters are not certified");
   fi
   if action == "routes"; then
     // Source inventory is intentionally independent of previously generated
@@ -412,6 +556,11 @@ pub routine main(): void {
   fi
   if backend != "graal"; then
     stdio.println(error("LLVM backend is not ready for this CLI"));
+    return;
+  fi
+  if command == "init"; then
+    val String role = env.get("ORESLANG_STACK_ROLE").unwrap();
+    stdio.println(init_project(root, entry, role));
     return;
   fi
   val String result = admission(root, entry, command);

@@ -18,18 +18,20 @@ fi
 
 if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
-Usage: oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
+Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--root DIR]
+       oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
-       oreslang-stack generate [--kind all|rpc|lambda] [--check] [--root DIR]
+       oreslang-stack generate [--kind all|rpc|lambda|graphql] [--check] [--root DIR]
        oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
+init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
 dev: run an Oreslang project once (watch/reload is not implemented).
 build: Oreslang native generators + compiler checks + source-only bundle.
 routes: emit manifest from Oreslang-native route discovery.
-generate: Oreslang-native RPC/Lambda source generation and drift detection.
+generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
 check: validate all generated outputs and check every .ores file with the compiler.
 deploy: always denied until a certified host adapter exists.
 EOF
@@ -41,12 +43,12 @@ fi
 # The command token is mandatory and controls the host receipt whitelist.
 # Do not allow inherited ORESLANG_STACK_COMMAND to replace command selection.
 if (( $# == 0 )); then
-  echo "oreslang-stack: expected dev|build|deploy|routes|generate|check" >&2
+  echo "oreslang-stack: expected init|dev|build|deploy|routes|generate|check" >&2
   exit 2
 fi
 requested_command="$1"
 case "$requested_command" in
-  dev|build|deploy|routes|generate|check) ;;
+  init|dev|build|deploy|routes|generate|check) ;;
   *) echo "oreslang-stack: unknown command: $requested_command" >&2; exit 2 ;;
 esac
 if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
@@ -75,9 +77,24 @@ export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
 export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
+if [[ "$requested_command" == "init" && "${ORESLANG_STACK_BACKEND:-graal}" != "graal" ]]; then
+  echo "oreslang-stack: init requires the supported graal backend" >&2
+  exit 2
+fi
+export ORESLANG_STACK_ROLE="${ORESLANG_STACK_ROLE:-}"
+if [[ "$requested_command" == "init" ]]; then
+  case "$ORESLANG_STACK_ROLE" in
+    api|admin-api|web|admin-web|infra|lambdas) ;;
+    *) echo "oreslang-stack: init requires --role api|admin-api|web|admin-web|infra|lambdas" >&2; exit 2 ;;
+  esac
+fi
 
 root="${ORESLANG_STACK_ROOT:-.}"
 entry="${ORESLANG_STACK_ENTRY:-src/main.ores}"
+if [[ "$requested_command" == "init" && "$entry" != "src/main.ores" ]]; then
+  echo "oreslang-stack: init requires src/main.ores" >&2
+  exit 2
+fi
 
 # A project entrypoint must stay relative to its selected root.
 case "$entry" in
@@ -94,6 +111,15 @@ if [[ ! -d "$root" || -L "$root" ]]; then
 fi
 root="$(cd -- "$root" && pwd -P)"
 export ORESLANG_STACK_ROOT="$root"
+if [[ "$requested_command" == "init" ]]; then
+  if [[ -e "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ||
+        -e "$root/src" || -L "$root/src" || -e "$root/generated" || -L "$root/generated" ||
+        -e "$root/.oreslang-stack-infra.candidate.toml" || -L "$root/.oreslang-stack-infra.candidate.toml" ||
+        -e "$root/.oreslang-stack-lambdas.candidate.toml" || -L "$root/.oreslang-stack-lambdas.candidate.toml" ]]; then
+    echo "oreslang-stack: init refuses existing project sources or generated paths" >&2
+    exit 2
+  fi
+fi
 if [[ -L "$root/src" || ( -e "$root/src" && ! -d "$root/src" ) || -L "$root/generated" ]]; then
   echo "oreslang-stack: symlink or invalid source/generated directory" >&2
   exit 2
@@ -102,11 +128,11 @@ if [[ -L "$root/oreslang-stack.toml" || -L "$root/$entry" ]]; then
   echo "oreslang-stack: project manifest and entrypoint may not be symlinks" >&2
   exit 2
 fi
-if ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
+if [[ "$requested_command" != "init" ]] && ! entry_parent="$(cd -- "$root/$(dirname -- "$entry")" && pwd -P)"; then
   echo "oreslang-stack: entrypoint parent is missing" >&2
   exit 2
 fi
-case "$entry_parent" in
+case "${entry_parent:-$root}" in
   "$root"|"$root"/*) ;;
   *) echo "oreslang-stack: entrypoint path escapes project root" >&2; exit 2 ;;
 esac
@@ -117,16 +143,28 @@ esac
 # Compiler/generator guest can read the project. Only commands that actually
 # generate code receive write grants; check/routes/deploy are strictly read-only.
 admission_permissions=(
-  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK"
+  "--allow-env=ORESLANG_STACK_COMMAND,ORESLANG_STACK_ROOT,ORESLANG_STACK_ENTRY,ORESLANG_STACK_BACKEND,ORESLANG_STACK_KIND,ORESLANG_STACK_CHECK,ORESLANG_STACK_ROLE"
   "--allow-read=$root"
 )
 case "$requested_command" in
+  init) admission_permissions+=("--allow-write=$root/oreslang-stack.toml,$root/src,$root/generated,$root/.oreslang-stack-infra.candidate.toml,$root/.oreslang-stack-lambdas.candidate.toml") ;;
   dev|build) admission_permissions+=("--allow-write=$root/src,$root/generated") ;;
   generate)
     if [[ "$ORESLANG_STACK_CHECK" != "true" ]]; then
       admission_permissions+=("--allow-write=$root/src,$root/generated")
     fi ;;
 esac
+# Independent host deny gate: no guest process starts for unsupported
+# operations on infra/Lambda candidates, even when role whitespace varies.
+if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
+  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*$' "$root/oreslang-stack.toml"; then
+    case "$requested_command" in
+      check|deploy) ;;
+      *) echo "oreslang-stack: candidate-only role forbids this command" >&2; exit 2 ;;
+    esac
+  fi
+fi
+
 if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
@@ -168,7 +206,57 @@ compiler_check_all() {
   fi
 }
 
+# Confirm the scaffold is complete, independent of the guest's success receipt.
+verify_initialized_project() {
+  local marker candidate
+  [[ -f "$root/oreslang-stack.toml" && ! -L "$root/oreslang-stack.toml" ]] || return 1
+  printf '[repository]\nrole = "%s"\n' "$ORESLANG_STACK_ROLE" |
+    cmp -s - "$root/oreslang-stack.toml" || return 1
+  [[ -f "$root/src/main.ores" && ! -L "$root/src/main.ores" ]] || return 1
+  case "$ORESLANG_STACK_ROLE" in
+    api|admin-api)
+      for marker in "$root/src/routes/handlers.ores" "$root/src/routes/route.ores" \
+        "$root/src/routes/rpc.ores" "$root/src/routes/lambda.ores" \
+        "$root/src/routes/graphql.ores" "$root/src/routes/graphql.graphql" \
+        "$root/generated/route-manifest.json"; do
+        [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      done
+      ;;
+    web|admin-web)
+      for marker in "$root/src/pages/page.ores" "$root/src/pages/lambda.ores" \
+        "$root/generated/route-manifest.json"; do
+        [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      done
+      [[ ! -e "$root/src/pages/rpc.ores" && ! -L "$root/src/pages/rpc.ores" ]] || return 1
+      ;;
+    infra|lambdas)
+      candidate="$root/.oreslang-stack-$ORESLANG_STACK_ROLE.candidate.toml"
+      [[ -f "$candidate" && ! -L "$candidate" ]] || return 1
+      printf '[candidate]\nrole = "%s"\ndeployable = false\n' "$ORESLANG_STACK_ROLE" |
+        cmp -s - "$candidate" || return 1
+      if [[ "$ORESLANG_STACK_ROLE" == infra ]]; then
+        marker="$root/src/infra/config.ores"
+      else
+        marker="$root/src/functions/hello/handler.ores"
+      fi
+      [[ -s "$marker" && ! -L "$marker" ]] || return 1
+      [[ ! -e "$root/generated" && ! -L "$root/generated" ]] || return 1
+      [[ ! -e "$root/src/routes" && ! -e "$root/src/pages" ]] || return 1
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 case "$action" in
+  ORESLANG_STACK_ACTION_v1:initialized)
+    [[ "$ORESLANG_STACK_COMMAND" == "init" ]] || exit 1
+    if ! verify_initialized_project; then
+      echo "oreslang-stack: init output incomplete or violates role contract" >&2
+      exit 1
+    fi
+    compiler_check_all
+    printf '%s\n' "initialized Oreslang ${ORESLANG_STACK_ROLE} project at ${root}"
+    ;;
   ORESLANG_STACK_JSON_v1:*)
     if [[ "${ORESLANG_STACK_COMMAND:-}" != "routes" ]]; then
       echo "oreslang-stack: unexpected JSON receipt" >&2
@@ -178,7 +266,8 @@ case "$action" in
     ;;
   ORESLANG_STACK_ACTION_v1:generated)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "generate" ]] || exit 1
-    printf '%s\n' "generated Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
+    compiler_check_all
+    printf '%s\n' "generated and compiler-checked Oreslang adapters (${ORESLANG_STACK_KIND:-all})"
     ;;
   ORESLANG_STACK_ACTION_v1:check)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
@@ -234,7 +323,7 @@ case "$action" in
     trap 'rm -rf "$stage"; rm -f "$tmp"; if [[ -n "${file_list:-}" ]]; then rm -f "$file_list"; fi' EXIT
     mkdir -p "$stage/src" "$stage/generated" "$stage/bin"
     file_list="$(mktemp)"
-    if ! find "$root/src" -type f -name '*.ores' -print0 > "$file_list"; then
+    if ! find "$root/src" -type f \( -name '*.ores' -o -name '*.graphql' \) -print0 > "$file_list"; then
       rm -f "$file_list"
       echo "oreslang-stack: cannot inventory Oreslang source for bundling" >&2
       exit 1
@@ -264,3 +353,4 @@ case "$action" in
     exit 1
     ;;
 esac
+ 
