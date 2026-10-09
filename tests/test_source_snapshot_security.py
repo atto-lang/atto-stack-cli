@@ -13,6 +13,16 @@ GUARD=importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(GUARD)
 
 class SnapshotAdmission(unittest.TestCase):
+    def test_noncanonical_source_paths_are_refused_before_normalization(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root/"src").mkdir()
+            for value in ("src//routes", "src/./routes", "src/../etc", "./src",
+                          "src/", "src\\\\routes", "/tmp"):
+                with self.subTest(path=value):
+                    with self.assertRaises(ValueError):
+                        GUARD.safe_relative(root, value)
+
     def test_regular_sources_are_hashed_by_opened_descriptor(self):
         with tempfile.TemporaryDirectory() as d:
             p=pathlib.Path(d)/"route.rs"
