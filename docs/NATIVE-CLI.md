@@ -8,6 +8,8 @@ Bash source generator.
 
 ## Admission receipts
 
+- `ORESLANG_STACK_ACTION_v1:initialized`: native `init --role api|admin-api|web|admin-web` populated previously absent project sources and generated source adapters; the host then compiler-checks every Oreslang source. Any existing `src/`, `generated/` or project manifest fails before writes.
+
 - `ORESLANG_STACK_ACTION_v1:dev`: run the Oreslang entrypoint.
 - `ORESLANG_STACK_ACTION_v1:build`: compiler-check all `.ores` files and
   package a runtime-dependent executable source bundle (`bin/oreslang-stack-run`). This is not a native binary.
@@ -40,3 +42,9 @@ runtime PRs require independent Java compiler test evidence before merge.
 4. Actual self-contained compiled backend artifacts and reproducible provenance.
 5. Host-specific adapters and real deploy receipts. All remain disabled until
    implemented; supported target planning is not deployment proof.
+
+## Organization fleet adoption
+
+A fresh checkout can be bootstrapped with `oreslang-stack init --root . --role <role>` and checked with `oreslang-stack generate --kind all --check --root .` followed by `oreslang-stack check --root .`. This is suitable for multiple independently versioned API/web repositories, with a separate draft PR and exact-head CI evidence for each.
+
+Do not invoke `init` against an existing app's `src/` directory: that requires an explicit semantic migration, not scaffold replacement. `deploy` remains disabled, and no generated String-envelope RPC/Lambda wrapper is proof of an HTTP server, published function or schema-conformant runtime.
