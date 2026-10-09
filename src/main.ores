@@ -34,8 +34,8 @@ fnc repository_role(String root): String {
     return error("missing oreslang-stack.toml");
   fi
   val lines = fs.read_text(path).split_literal("\n");
-  let section = "";
-  let role = "";
+  let String section = "";
+  let String role = "";
   for const raw of lines {
     val line = raw.trim();
     if line == "" | line.starts_with("#"); then
@@ -69,7 +69,7 @@ fnc route_path(String route, String segment): String {
   if !segment.is_route_segment(); then
     return error("invalid filesystem route segment: " + segment);
   fi
-  let component = segment;
+  let String component = segment;
   if segment.starts_with("["); then
     component = "{" + segment.replace_literal("[", "").replace_literal("]", "") + "}";
   fi
@@ -78,7 +78,7 @@ fnc route_path(String route, String segment): String {
 }
 
 fnc route_shape(String shape, String segment): String {
-  let component = segment;
+  let String component = segment;
   if segment.starts_with("["); then component = "{}"; fi
   if shape == "/"; then return "/" + component; fi
   return shape + "/" + component;
@@ -131,10 +131,10 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   fi
   val source = fs.read_text(path);
   val handlers = fs.read_text(handler_path);
-  let manifest = "";
-  let rpc = GENERATED + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\n";
-  let lambda = GENERATED + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\n";
-  let seen = "|";
+  let String manifest = "";
+  let String rpc = GENERATED + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\n";
+  let String lambda = GENERATED + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\n";
+  let String seen = "|";
   let count = 0;
   for const raw of source.split_literal("\n") {
     val line = raw.trim();
@@ -192,7 +192,7 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
   val path = dir + "/page.ores";
   if fs.is_symlink(path); then return error("symlinked page source: " + path); fi
   val source = fs.read_text(path);
-  let renderer = "";
+  let String renderer = "";
   for const raw of source.split_literal("\n") {
     val line = raw.trim();
     if !line.starts_with("// @ores-page"); then continue; fi
@@ -227,7 +227,7 @@ fnc walk(String root, String dir, String url, String shape,
   if !fs.is_dir(dir); then return error("missing source directory: " + dir); fi
   val api = is_api(role);
   val leaf_name = api ? "route.ores" : "page.ores";
-  let result = "";
+  let String result = "";
   val leaf_path = dir + "/" + leaf_name;
   val has_leaf = fs.exists(leaf_path);
   if has_leaf; then
@@ -272,8 +272,8 @@ fnc walk(String root, String dir, String url, String shape,
 }
 
 fnc manifest_from_records(String role, String records): String {
-  let seen_shapes = "|";
-  let json_rows = "";
+  let String seen_shapes = "|";
+  let String json_rows = "";
   let count = 0;
   for const line of records.split_literal("\n") {
     if line.starts_with("@S|"); then
