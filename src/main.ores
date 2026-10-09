@@ -458,7 +458,7 @@ fnc admission(String root, String entry, String action): String {
       if fs.is_symlink(candidate) | !fs.exists(candidate); then
         return error("missing or symlinked non-deployable candidate manifest");
       fi
-      val String expected = "[candidate]\\nrole = \\"" + role + "\\"\\ndeployable = false\\n";
+      val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
       if fs.read_text(candidate) != expected; then
         return error("candidate manifest drift or deployable policy changed");
       fi
