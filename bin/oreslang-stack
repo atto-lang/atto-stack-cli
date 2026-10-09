@@ -30,7 +30,7 @@ Options are parsed by flags-2-env (.cli-flags.toml).
 init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
 dev: run an Oreslang project once (watch/reload is not implemented).
 build: Oreslang native generators + compiler checks + source-only bundle.
-routes: emit manifest from Oreslang-native route discovery.
+routes: emit manifest from REST src/routes/rest and web src/pages/root.
 generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
 check: validate all generated outputs and check every .ores file with the compiler.
 deploy: always denied until a certified host adapter exists.
@@ -215,19 +215,20 @@ verify_initialized_project() {
   [[ -f "$root/src/main.ores" && ! -L "$root/src/main.ores" ]] || return 1
   case "$ORESLANG_STACK_ROLE" in
     api|admin-api)
-      for marker in "$root/src/routes/handlers.ores" "$root/src/routes/route.ores" \
-        "$root/src/routes/rpc.ores" "$root/src/routes/lambda.ores" \
-        "$root/src/routes/graphql.ores" "$root/src/routes/graphql.graphql" \
+      for marker in "$root/src/routes/rest/handlers.ores" "$root/src/routes/rest/route.ores" \
+        "$root/src/contracts/RouteContract.ores" \
+        "$root/src/routes/rest/rpc.ores" "$root/src/routes/rest/lambda.ores" \
+        "$root/src/routes/rest/graphql.ores" "$root/src/routes/rest/graphql.graphql" \
         "$root/generated/route-manifest.json"; do
         [[ -s "$marker" && ! -L "$marker" ]] || return 1
       done
       ;;
     web|admin-web)
-      for marker in "$root/src/pages/page.ores" "$root/src/pages/lambda.ores" \
+      for marker in "$root/src/pages/root/page.ores" "$root/src/pages/root/lambda.ores" \
         "$root/generated/route-manifest.json"; do
         [[ -s "$marker" && ! -L "$marker" ]] || return 1
       done
-      [[ ! -e "$root/src/pages/rpc.ores" && ! -L "$root/src/pages/rpc.ores" ]] || return 1
+      [[ ! -e "$root/src/pages/root/rpc.ores" && ! -L "$root/src/pages/root/rpc.ores" ]] || return 1
       ;;
     infra|lambdas)
       candidate="$root/.oreslang-stack-$ORESLANG_STACK_ROLE.candidate.toml"
