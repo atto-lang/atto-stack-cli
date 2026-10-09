@@ -391,8 +391,12 @@ class Worker(http.server.BaseHTTPRequestHandler):
             incarnation = ("d" + str(state["daddy_generation"]) + ":c" +
                            str(state["child_generations"].get(route_path, 0)))
         if item is None: return self.send(404, {}, b"route not found")
-        try: status, headers, body = forwarded(daddy[1], self, state["token"], item[1])
-        except Exception: return self.send(502, {}, b"middleware unavailable")
+        try:
+            status, headers, body = forwarded(daddy[1], self, state["token"], item[1])
+        except Exception:
+            status, headers, body = 502, {}, b"middleware unavailable"
+        # A failed in-flight proxy request still has an atomic admission
+        # incarnation. Returning it on 502 makes crash/reload races auditable.
         headers["X-Ores-Grandaddy-PID"] = str(os.getpid())
         headers["X-Ores-Generation"] = incarnation
         return self.send(status, headers, body)
