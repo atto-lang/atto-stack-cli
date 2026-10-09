@@ -70,5 +70,36 @@ class SnapshotAdmission(unittest.TestCase):
             with self.assertRaises(ValueError):
                 GUARD.digest_tree(r,"src/routes/a",recursive=True)
 
+    def test_stale_initial_sources_never_open_a_listener(self):
+        import json
+        import types
+        from unittest import mock
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root/"src/middleware").mkdir(parents=True)
+            (root/"src/routes/a").mkdir(parents=True)
+            (root/"src/routes/a/route.rs").write_text("initial source")
+            (root/"dev-tree.json").write_text(json.dumps({
+                "schema":"ores.dev.generations/v1",
+                "port":18088,
+                "middleware":"src/middleware",
+                "fixture_echo":True,
+                "routes":[{"path":"/a", "dir":"src/routes/a"}]
+            }))
+            daddy, child = object(), object()
+            with mock.patch.object(GUARD, "digest_tree",
+                                   side_effect=["middleware-v1", "route-v1", "middleware-v2"]):
+                with mock.patch.object(GUARD, "spawn_worker",
+                                       side_effect=[(daddy,19001), (child,19002)]) as spawn:
+                    with mock.patch.object(GUARD, "stop") as stop:
+                        with mock.patch.object(GUARD, "HttpService") as service:
+                            with self.assertRaisesRegex(ValueError, "source changed during initial worker admission"):
+                                GUARD.supervise(types.SimpleNamespace(root=str(root),language="rust"))
+                            service.assert_not_called()
+                        self.assertEqual(spawn.call_count, 2)
+                        stopped = [call.args[0] for call in stop.call_args_list]
+                        self.assertIn(daddy, stopped)
+                        self.assertIn(child, stopped)
+
 if __name__=="__main__":
     unittest.main()
