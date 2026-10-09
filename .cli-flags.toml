@@ -50,14 +50,14 @@ help = "Read source-tree routes and print canonical route manifest."
 
 [commands.generate]
 env = "ORESLANG_STACK_COMMAND_GENERATE"
-help = "Generate canonical RPC/Lambda sibling adapters from Oreslang sources."
+help = "Generate canonical RPC/Lambda/GraphQL sibling adapters from Oreslang sources."
 
 [commands.generate.flags.kind]
 env = "ORESLANG_STACK_KIND"
 aliases = ["kind"]
 type = "string"
 default = "all"
-help = "Generate all, rpc or lambda (web routes only support lambda)."
+help = "Generate all, rpc, lambda or graphql (web routes only support lambda)."
 
 [commands.generate.flags.check]
 env = "ORESLANG_STACK_CHECK"
