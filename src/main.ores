@@ -17,7 +17,7 @@ fnc is_error(String result): bool {
 }
 
 fnc quote_json(String raw): String {
-  val escaped = raw.replace_literal("\\", "\\\\")
+  val String escaped = raw.replace_literal("\\", "\\\\")
     .replace_literal("\"", "\\\"")
     .replace_literal("\n", "\\n")
     .replace_literal("\r", "\\r")
@@ -26,7 +26,7 @@ fnc quote_json(String raw): String {
 }
 
 fnc repository_role(String root): String {
-  val path = root + "/oreslang-stack.toml";
+  val String path = root + "/oreslang-stack.toml";
   if fs.is_symlink(path); then
     return error("project manifest is a symlink");
   fi
@@ -37,7 +37,7 @@ fnc repository_role(String root): String {
   let String section = "";
   let String role = "";
   for const raw of lines {
-    val line = raw.trim();
+    val String line = raw.trim();
     if line == "" | line.starts_with("#"); then
       continue;
     fi
@@ -92,7 +92,7 @@ fnc sync_one(String path, String generated, bool check, bool dry): String {
     return error("symlinked output: " + path);
   fi
   if fs.exists(path); then
-    val previous = fs.read_text(path);
+    val String previous = fs.read_text(path);
     if path.ends_with(".ores"), !previous.starts_with(GENERATED); then
       return error("refusing to overwrite hand-authored code: " + path);
     fi
@@ -125,23 +125,23 @@ fnc http_method(String method): bool {
 
 // On success returns newline-terminated manifest row(s).
 fnc api_leaf(String root, String dir, String url, String kind, bool check, bool dry): String {
-  val path = dir + "/route.ores";
-  val handler_path = dir + "/handlers.ores";
+  val String path = dir + "/route.ores";
+  val String handler_path = dir + "/handlers.ores";
   if fs.is_symlink(path) | fs.is_symlink(handler_path); then
     return error("symlinked route source or handlers: " + dir);
   fi
   if !fs.exists(handler_path); then
     return error("route.ores requires sibling handlers.ores: " + dir);
   fi
-  val source = fs.read_text(path);
-  val handlers = fs.read_text(handler_path);
+  val String source = fs.read_text(path);
+  val String handlers = fs.read_text(handler_path);
   let String manifest = "";
   let String rpc = GENERATED + "// Transport-neutral RPC adapters; typed transports remain host-specific.\nimport module route from \"./route\";\n\n";
   let String lambda = GENERATED + "// Oreslang Lambda source exports; runtime transport must be admitted.\nimport module rpc from \"./rpc\";\n\n";
   let String seen = "|";
   let count = 0;
   for const raw of source.split_literal("\n") {
-    val line = raw.trim();
+    val String line = raw.trim();
     if !line.starts_with("// @ores-route"); then continue; fi
     val fields = line.split_literal(" ");
     if fields.size != 5 | fields[0] != "//" | fields[1] != "@ores-route"; then
@@ -173,17 +173,17 @@ fnc api_leaf(String root, String dir, String url, String kind, bool check, bool 
   if count == 0; then return error("no @ores-route declarations: " + path); fi
 
   if kind == "all" | kind == "rpc"; then
-    val status = sync_one(dir + "/rpc.ores", rpc, check, dry);
+    val String status = sync_one(dir + "/rpc.ores", rpc, check, dry);
     if is_error(status); then return status; fi
   fi
   if kind == "all" | kind == "lambda"; then
     // Generated Lambda uses the generated RPC module. No implicit creation
     // when only "lambda" was requested.
-    val rpc_status = sync_one(dir + "/rpc.ores", rpc, true, true);
+    val String rpc_status = sync_one(dir + "/rpc.ores", rpc, true, true);
     if kind == "lambda", is_error(rpc_status); then
       return error("Lambda requires current RPC adapter: " + dir);
     fi
-    val status = sync_one(dir + "/lambda.ores", lambda, check, dry);
+    val String status = sync_one(dir + "/lambda.ores", lambda, check, dry);
     if is_error(status); then return status; fi
   fi
   return manifest;
@@ -193,12 +193,12 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
   if kind == "rpc"; then
     return error("web pages do not produce RPC operations");
   fi
-  val path = dir + "/page.ores";
+  val String path = dir + "/page.ores";
   if fs.is_symlink(path); then return error("symlinked page source: " + path); fi
-  val source = fs.read_text(path);
+  val String source = fs.read_text(path);
   let String renderer = "";
   for const raw of source.split_literal("\n") {
-    val line = raw.trim();
+    val String line = raw.trim();
     if !line.starts_with("// @ores-page"); then continue; fi
     val fields = line.split_literal(" ");
     if fields.size != 4 | fields[0] != "//" | fields[1] != "@ores-page" |
@@ -210,11 +210,11 @@ fnc web_leaf(String root, String dir, String url, String kind, bool check, bool 
   if renderer == "" | !source.contains_literal("pub fnc " + renderer + "(String request)"); then
     return error("page requires public String renderer: " + path);
   fi
-  val lambda = GENERATED + "// Web Lambda adapter; server supplies request/response transport.\n" +
+  val String lambda = GENERATED + "// Web Lambda adapter; server supplies request/response transport.\n" +
     "import module page from \"./page\";\n\n" +
     "pub fnc invoke_page(String request) -> String {\n  return page." + renderer + "(request);\n}\n";
   if kind == "all" | kind == "lambda"; then
-    val status = sync_one(dir + "/lambda.ores", lambda, check, dry);
+    val String status = sync_one(dir + "/lambda.ores", lambda, check, dry);
     if is_error(status); then return status; fi
   fi
   return "@J|{\"kind\":\"page\",\"path\":" + quote_json(url) +
@@ -230,27 +230,28 @@ fnc walk(String root, String dir, String url, String shape,
   if fs.is_symlink(dir); then return error("symlinked route directory: " + dir); fi
   if !fs.is_dir(dir); then return error("missing source directory: " + dir); fi
   val api = is_api(role);
-  val leaf_name = api ? "route.ores" : "page.ores";
+  val String leaf_name = api ? "route.ores" : "page.ores";
   let String result = "";
-  val leaf_path = dir + "/" + leaf_name;
+  val String leaf_path = dir + "/" + leaf_name;
   val has_leaf = fs.exists(leaf_path);
   if has_leaf; then
-    val manifest = api ? api_leaf(root, dir, url, kind, check, dry) :
+    val String manifest = api ? api_leaf(root, dir, url, kind, check, dry) :
       web_leaf(root, dir, url, kind, check, dry);
     if is_error(manifest); then return manifest; fi
     result = "@S|" + shape + "|\n" + manifest;
   fi
 
-  for const name of fs.list_dir(dir) {
-    val child = dir + "/" + name;
+  for const raw_name of fs.list_dir(dir) {
+    val String name = raw_name;
+    val String child = dir + "/" + name;
     if fs.is_symlink(child); then
       return error("symlink in route tree: " + child);
     fi
     if fs.is_dir(child); then
-      val next_url = route_path(url, name);
+      val String next_url = route_path(url, name);
       if is_error(next_url); then return next_url; fi
-      val next_shape = route_shape(shape, name);
-      val nested = walk(root, child, next_url, next_shape, role, kind, check, dry, depth + 1);
+      val String next_shape = route_shape(shape, name);
+      val String nested = walk(root, child, next_url, next_shape, role, kind, check, dry, depth + 1);
       if is_error(nested); then return nested; fi
       result = result + nested;
     else
@@ -270,7 +271,7 @@ fnc walk(String root, String dir, String url, String shape,
           fi
         fi
         if targeted, !valid; then
-          val old = fs.read_text(child);
+          val String old = fs.read_text(child);
           if !old.starts_with(GENERATED); then
             return error("unowned adapter in route tree: " + child);
           fi
@@ -287,7 +288,8 @@ fnc manifest_from_records(String role, String records): String {
   let String seen_shapes = "|";
   let String json_rows = "";
   let count = 0;
-  for const line of records.split_literal("\n") {
+  for const raw_line of records.split_literal("\n") {
+    val String line = raw_line;
     if line.starts_with("@S|"); then
       if seen_shapes.contains_literal(line); then
         return error("ambiguous dynamic route path shape: " + line);
@@ -308,9 +310,9 @@ fnc manifest_from_records(String role, String records): String {
 }
 
 fnc route_manifest(String root, String role, String kind, bool check, bool dry): String {
-  val folder = is_api(role) ? "routes" : "pages";
-  val path = root + "/src/" + folder;
-  val records = walk(root, path, "/", "/", role, kind, check, dry, 0);
+  val String folder = is_api(role) ? "routes" : "pages";
+  val String path = root + "/src/" + folder;
+  val String records = walk(root, path, "/", "/", role, kind, check, dry, 0);
   if is_error(records); then return records; fi
   return manifest_from_records(role, records);
 }
@@ -323,19 +325,19 @@ fnc generate(String root, String role, String kind, bool check): String {
     return error("web pages do not produce RPC operations");
   fi
   // Phase 1: validate every source and pre-existing artifact before writes.
-  val inspected = route_manifest(root, role, kind, false, true);
+  val String inspected = route_manifest(root, role, kind, false, true);
   if is_error(inspected); then return inspected; fi
 
   // Manifest path ownership must be admitted before changing any adapter.
   // In particular, a hand-authored manifest cannot cause partial generation.
   if kind == "all"; then
-    val parent = root + "/generated";
+    val String parent = root + "/generated";
     if fs.is_symlink(parent); then return error("generated manifest parent is symlink"); fi
     if fs.exists(parent), !fs.is_dir(parent); then
       return error("generated manifest parent is not a directory");
     fi
     if fs.exists(parent); then
-      val existing = sync_one(parent + "/route-manifest.json", inspected, check, true);
+      val String existing = sync_one(parent + "/route-manifest.json", inspected, check, true);
       if is_error(existing); then return existing; fi
     else
       if check; then return error("missing generated output: " + parent); fi
@@ -343,21 +345,21 @@ fnc generate(String root, String role, String kind, bool check): String {
   fi
 
   // Phase 2: verify or materialize byte-stable Oreslang adapters.
-  val manifest = route_manifest(root, role, kind, check, false);
+  val String manifest = route_manifest(root, role, kind, check, false);
   if is_error(manifest); then return manifest; fi
   if kind == "all"; then
-    val parent = root + "/generated";
+    val String parent = root + "/generated";
     if !fs.exists(parent); then fs.mkdir_all(parent); fi
-    val state = sync_one(parent + "/route-manifest.json", manifest, check, false);
+    val String state = sync_one(parent + "/route-manifest.json", manifest, check, false);
     if is_error(state); then return state; fi
   fi
   return "";
 }
 
 fnc admission(String root, String entry, String action): String {
-  val role = repository_role(root);
+  val String role = repository_role(root);
   if is_error(role); then return role; fi
-  val entry_path = root + "/" + entry;
+  val String entry_path = root + "/" + entry;
   if fs.is_symlink(entry_path) | !fs.exists(entry_path); then
     return error("missing or symlinked Oreslang application entrypoint");
   fi
@@ -370,19 +372,19 @@ fnc admission(String root, String entry, String action): String {
     return error("deploy denied: no certified compiler artifact or host adapter");
   fi
   if action == "generate"; then
-    val kind = env.get("ORESLANG_STACK_KIND").unwrap();
-    val check = env.get("ORESLANG_STACK_CHECK").unwrap();
-    val result = generate(root, role, kind, check == "true");
+    val String kind = env.get("ORESLANG_STACK_KIND").unwrap();
+    val String check = env.get("ORESLANG_STACK_CHECK").unwrap();
+    val String result = generate(root, role, kind, check == "true");
     if is_error(result); then return result; fi
     return "ORESLANG_STACK_ACTION_v1:generated";
   fi
   if action == "check"; then
-    val result = generate(root, role, "all", true);
+    val String result = generate(root, role, "all", true);
     if is_error(result); then return result; fi
     return "ORESLANG_STACK_ACTION_v1:check";
   fi
   if action == "dev" | action == "build"; then
-    val result = generate(root, role, "all", false);
+    val String result = generate(root, role, "all", false);
     if is_error(result); then return result; fi
     return "ORESLANG_STACK_ACTION_v1:" + action;
   fi
@@ -390,10 +392,10 @@ fnc admission(String root, String entry, String action): String {
 }
 
 pub routine main(): void {
-  val command = env.get("ORESLANG_STACK_COMMAND").unwrap();
-  val root = env.get("ORESLANG_STACK_ROOT").unwrap();
-  val entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
-  val backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
+  val String command = env.get("ORESLANG_STACK_COMMAND").unwrap();
+  val String root = env.get("ORESLANG_STACK_ROOT").unwrap();
+  val String entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
+  val String backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
 
   if command == "deploy"; then
     stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
@@ -403,7 +405,7 @@ pub routine main(): void {
     stdio.println(error("LLVM backend is not ready for this CLI"));
     return;
   fi
-  val result = admission(root, entry, command);
+  val String result = admission(root, entry, command);
   if command == "routes", !is_error(result); then
     stdio.println("ORESLANG_STACK_JSON_v1:" + result);
   else
