@@ -33,6 +33,32 @@ type = "string"
 default = "graal"
 help = "graal is implemented for dev and source-bundle build; llvm fails closed."
 
+[commands.routes]
+env = "ORESLANG_STACK_COMMAND_ROUTES"
+help = "Read source-tree routes and print canonical route manifest."
+
+[commands.generate]
+env = "ORESLANG_STACK_COMMAND_GENERATE"
+help = "Generate canonical RPC/Lambda sibling adapters from Oreslang sources."
+
+[commands.generate.flags.kind]
+env = "ORESLANG_STACK_KIND"
+aliases = ["kind"]
+type = "string"
+default = "all"
+help = "Generate all, rpc or lambda (web routes only support lambda)."
+
+[commands.generate.flags.check]
+env = "ORESLANG_STACK_CHECK"
+aliases = ["check"]
+type = "bool"
+default = "false"
+help = "Check generated output byte equality without writing."
+
+[commands.check]
+env = "ORESLANG_STACK_COMMAND_CHECK"
+help = "Check adapter drift and run the native Oreslang compiler on every source."
+
 [commands.dev]
 env = "ORESLANG_STACK_COMMAND_DEV"
 help = "Run the Oreslang application once with the Java/Graal runtime."
