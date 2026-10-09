@@ -15,7 +15,7 @@ if [[ "${1:-}" == "--check" ]]; then
 fi
 if [[ "${1:-}" == --allow-env=* ]]; then
   case "${ORESLANG_STACK_COMMAND:-}" in
-    dev|build) printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$ORESLANG_STACK_COMMAND" ;;
+    dev|build) if [[ "${ORESLANG_STACK_BACKEND:-graal}" != "graal" ]]; then printf 'ERROR: LLVM not supported\n'; exit 0; fi; printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$ORESLANG_STACK_COMMAND" ;;
     deploy) printf 'ERROR: deployment denied\n' ;;
     *) printf 'ERROR: unrecognized\n' ;;
   esac
