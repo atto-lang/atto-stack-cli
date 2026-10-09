@@ -23,7 +23,7 @@ Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--r
        oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
-       oreslang-stack generate [--kind all|rpc|lambda] [--check] [--root DIR]
+       oreslang-stack generate [--kind all|rpc|lambda|graphql] [--check] [--root DIR]
        oreslang-stack check [--root DIR]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
@@ -31,7 +31,7 @@ init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sou
 dev: run an Oreslang project once (watch/reload is not implemented).
 build: Oreslang native generators + compiler checks + source-only bundle.
 routes: emit manifest from Oreslang-native route discovery.
-generate: Oreslang-native RPC/Lambda source generation and drift detection.
+generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
 check: validate all generated outputs and check every .ores file with the compiler.
 deploy: always denied until a certified host adapter exists.
 EOF
@@ -217,6 +217,7 @@ verify_initialized_project() {
     api|admin-api)
       for marker in "$root/src/routes/handlers.ores" "$root/src/routes/route.ores" \
         "$root/src/routes/rpc.ores" "$root/src/routes/lambda.ores" \
+        "$root/src/routes/graphql.ores" "$root/src/routes/graphql.graphql" \
         "$root/generated/route-manifest.json"; do
         [[ -s "$marker" && ! -L "$marker" ]] || return 1
       done
@@ -322,7 +323,7 @@ case "$action" in
     trap 'rm -rf "$stage"; rm -f "$tmp"; if [[ -n "${file_list:-}" ]]; then rm -f "$file_list"; fi' EXIT
     mkdir -p "$stage/src" "$stage/generated" "$stage/bin"
     file_list="$(mktemp)"
-    if ! find "$root/src" -type f -name '*.ores' -print0 > "$file_list"; then
+    if ! find "$root/src" -type f \( -name '*.ores' -o -name '*.graphql' \) -print0 > "$file_list"; then
       rm -f "$file_list"
       echo "oreslang-stack: cannot inventory Oreslang source for bundling" >&2
       exit 1
