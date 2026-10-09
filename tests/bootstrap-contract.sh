@@ -137,4 +137,18 @@ if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/linked/entry
   echo "symlinked application entry must fail" >&2
   exit 1
 fi
+printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/entry.txt"
+if "$repo/bin/oreslang-stack" build --root "$tmp/project" --entry src/entry.txt; then
+  echo "non-Oreslang entrypoint must fail" >&2
+  exit 1
+fi
+if "$repo/bin/oreslang-stack" build --root "$tmp/project" --entry src//main.ores; then
+  echo "noncanonical path with double slash must fail" >&2
+  exit 1
+fi
+printf 'src/entry.txt\n' > "$tmp/unpacked/.oreslang-stack-entry"
+if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; then
+  echo "non-Oreslang source receipt must fail" >&2
+  exit 1
+fi
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
