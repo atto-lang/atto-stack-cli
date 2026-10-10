@@ -463,8 +463,8 @@ fnc init_project(String root, String entry, String role): String {
     fs.write_text_atomic(source_root + "/contracts/RouteContract.ores",
       "// Pinned from oresoftware/ores-interfaces/contracts/oreslang-route/v1/RouteContract.ores\n" +
       "define contract RouteContract as\n" +
-      "  fnc get(String request) -> String;\n" +
-      "  fnc post(String request) -> String;\nend\n");
+      "  fnc get(String request) => String;\n" +
+      "  fnc post(String request) => String;\nend\n");
     fs.write_text_atomic(route_dir + "/handlers.ores",
       "define module handlers as\n" +
       "  pub fnc get(String request) -> String { return request; }\n" +
