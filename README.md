@@ -13,7 +13,7 @@
 
 Do **not** substitute the other CLI, its config/manifest, binary, tests, or deployment claims. In particular, Oreslang Stack's `deploy` currently fails closed; an ORES Stack deployment feature does not make an Oreslang Stack deployment supported.
 
-**CI mirror rule:** An exact copy of Oreslang source placed temporarily in an `ores-stack` repository (or another funded test organization) is **only a CI fixture**. The canonical Oreslang source and review remain in `ores-truffle-oreslang`; require matching source/mirror Git tree SHAs and executed tests for the specific commit before claiming verification. Test hosting does not transfer ownership or create release equivalence.
+**CI mirror rule:** An exact copy of private Oreslang source placed temporarily in an `ores-stack` repository (or another funded test organization) is **only a CI fixture**. Use only an explicitly authorized **private** destination with controlled access. The test repo's `GITHUB_TOKEN` cannot implicitly check out the private source across organizations: copy the source Git tree into the test repo through an authorized GitHub client, then let Actions check out **its own local mirror** with read-only permissions. Require the source commit and mirrored subtree Git tree SHAs to match, plus allocated runner steps and passing checks on that exact tree. Do not expose source through public branches/artifacts/logs, and remove the temporary mirror after retaining evidence. Source ownership, review, and releases remain in `ores-truffle-oreslang`.
 
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
@@ -44,7 +44,8 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 
 | Command | Behavior |
 |---|---|
-| `init` | Oreslang-native fresh API/web sources and candidate-only infra/Lambda scaffolds; refuses existing `src/`, `generated/`, or project manifests |\n| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
+| `init` | Oreslang-native fresh API/web sources and candidate-only infra/Lambda scaffolds; refuses existing `src/`, `generated/`, or project manifests |
+| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
@@ -102,8 +103,7 @@ race-free openat handles**, so hostile mutable project trees are not supported.
 - Oreslang stdlib additions from
   [`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496):
   directory enumeration, symlink metadata, and safe literal string operations.
-  **Until this dependency is merged and packaged, a stock compiler may not
-  run this CLI.**
+  **PR #496 is merged into the source repository (October 9, 2026).** The CLI still needs a **built/installed Java/Graal runtime that actually includes these APIs**; a merged PR by itself does not establish packaged runtime compatibility.
 
 Use `FLAGS2ENV_BIN` to locate a custom flags parser executable.
 The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser.
@@ -124,5 +124,4 @@ real interpreter and its filesystem permission APIs. See
 
 A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
-still experimental and is not usable as the CLI runtime. This PR must remain
-draft until Java/Graal integration tests and the stdlib dependency are green.
+still experimental and is not usable as the CLI runtime. Do not claim deployment certification until executed Java/Graal integration tests, the installed stdlib/runtime dependency, and backend-specific deployment receipts have been verified.
