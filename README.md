@@ -1,5 +1,20 @@
 # Oreslang Stack CLI
 
+## Project identity: Oreslang Stack is not ORES Stack
+
+**Oreslang Stack** and **ORES Stack** are **separate projects with different CLIs and release tracks**. This repository provides the **Oreslang-native `oreslang-stack` CLI**, not the Rust `ores-stack` CLI.
+
+| | Oreslang Stack (this repository) | ORES Stack (separate project) |
+| --- | --- | --- |
+| CLI source | [`ores-truffle-oreslang/oreslang-stack-cli`](https://github.com/ores-truffle-oreslang/oreslang-stack-cli) | [`ores-stack/ores-stack-cli`](https://github.com/ores-stack/ores-stack-cli) |
+| Command | `oreslang-stack` | `ores-stack` |
+| Implementation | Oreslang `src/main.ores`, POSIX bootstrap, and Oreslang Java/Graal compiler/runtime | Rust/Cargo tooling and ORES Stack contracts |
+| Focus | Oreslang API/web scaffolding, route discovery, native-source generation, checks and source packaging | ORES Stack module/admission workflows, lambda adapter generation, provider-bound WASM materialization and deployment tooling |
+
+Do **not** substitute the other CLI, its config/manifest, binary, tests, or deployment claims. In particular, Oreslang Stack's `deploy` currently fails closed; an ORES Stack deployment feature does not make an Oreslang Stack deployment supported.
+
+**CI mirror rule:** An exact copy of Oreslang source placed temporarily in an `ores-stack` repository (or another funded test organization) is **only a CI fixture**. The canonical Oreslang source and review remain in `ores-truffle-oreslang`; require matching source/mirror Git tree SHAs and executed tests for the specific commit before claiming verification. Test hosting does not transfer ownership or create release equivalence.
+
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
 RPC/Lambda source generation live in [`src/main.ores`](src/main.ores).
