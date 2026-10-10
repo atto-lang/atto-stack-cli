@@ -139,6 +139,9 @@ for role in api admin-api web admin-web; do
   if [[ "$role" == api || "$role" == admin-api ]]; then
     test -f "$root/src/routes/rest/route.ores"
     test -f "$root/src/routes/rest/handlers.ores"
+    grep -Fx '  fnc get(String request) => String;' "$root/src/contracts/RouteContract.ores"
+    grep -Fx '  fnc post(String request) => String;' "$root/src/contracts/RouteContract.ores"
+    grep -F 'define module Route conforms to RouteContract as' "$root/src/routes/rest/route.ores"
     test -f "$root/src/routes/rest/rpc.ores"
     test -f "$root/src/routes/rest/lambda.ores"
     test -f "$root/src/routes/rest/graphql.ores"
