@@ -140,6 +140,11 @@ for role in api admin-api web admin-web; do
     test -f "$root/src/routes/rest/route.ores"
     test -f "$root/src/routes/rest/handlers.ores"
     grep -Fx 'pub define contract RouteContract as' "$root/src/contracts/RouteContract.ores"
+    grep -Fx 'define contract RouteContract as' "$root/src/contracts/RouteContract.ores"
+    if grep -F 'pub define contract' "$root/src/contracts/RouteContract.ores"; then
+      echo 'noncanonical pub contract must be rejected' >&2
+      exit 1
+    fi
     grep -Fx '  fnc get(String request) => String;' "$root/src/contracts/RouteContract.ores"
     grep -Fx '  fnc post(String request) => String;' "$root/src/contracts/RouteContract.ores"
     grep -F 'define module Route conforms RouteContract as' "$root/src/routes/rest/route.ores"
