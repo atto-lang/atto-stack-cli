@@ -473,7 +473,7 @@ fnc init_project(String root, String entry, String role): String {
       "// @ores-route GET / get\n// @ores-route POST / post\n" +
       "import contract RouteContract from \"../../contracts/RouteContract\";\n" +
       "import module handlers from \"./handlers\";\n\n" +
-      "define module Route conforms to RouteContract as\n" +
+      "define module Route conforms RouteContract as\n" +
       "  pub fnc get(String request) -> String { return handlers.get(request); }\n" +
       "  pub fnc post(String request) -> String { return handlers.post(request); }\nend\n");
   else
