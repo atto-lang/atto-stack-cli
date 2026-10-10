@@ -39,6 +39,7 @@ oreslang-stack generate --kind all --root examples/hello-api
 oreslang-stack generate --kind all --check --root examples/hello-api
 oreslang-stack check --root examples/hello-api
 oreslang-stack build --root examples/hello-api
+# Expected to fail closed: deployment has no certified backend yet.
 oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 ```
 
@@ -75,8 +76,10 @@ All filesystem writes are scoped to the selected repository. Project initializat
 
 ## Source layout
 
-The project declares the role in `oreslang-stack.toml` as
-`api`, `admin-api`, `web` or `admin-web`. API repositories author
+For API/web repositories, `oreslang-stack.toml` declares one of
+`api`, `admin-api`, `web` or `admin-web`. The additional `infra` and
+`lambdas` roles use the non-deployable candidate profile described above.
+API repositories author
 `src/routes/**/route.ores` with sibling `handlers.ores` and
 `// @ores-route GET /users/{id} show` annotations. Web repositories author
 `src/pages/**/page.ores` with `// @ores-page /users/{id} render`.
