@@ -9,6 +9,17 @@ permissions:
   contents: read
 
 jobs:
+  source-grammar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          persist-credentials: false
+      - name: Static RouteContract and generator grammar
+        run: node --test tests/route-contract-static.test.mjs
+      - name: Shell syntax
+        run: bash -n bin/oreslang-stack tests/native-generator-contract.sh
   host-bridge:
     runs-on: ubuntu-latest
     steps:
