@@ -47,6 +47,18 @@ against the derived static/dynamic path. Route shapes `/users/[id]` and
 `/users/[name]` conflict irrespective of parameter name. Nesting is capped
 at 32 path segments.
 
+Repository roles are exclusive across the whole source layout: an API role
+rejects `src/pages` entirely, and a web role rejects `src/routes` entirely.
+Within the selected route tree, API routes reject
+`page.ores` and web pages reject `route.ores`, including when a valid leaf
+exists in the same directory. Mixed-role projects are not silently inventoried.
+The preflight also rejects source leaves, handlers, the project manifest, or
+generated destinations and application entrypoints that are directories rather
+than files. These failures
+occur before adapter or manifest writes; the native integration suite checks
+that no new output appears after a rejected preflight. As elsewhere, this is
+not a defense against a concurrently hostile mutable filesystem.
+
 ## Boundaries
 
 - The source generators use a transport-neutral String envelope, matching
