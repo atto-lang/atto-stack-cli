@@ -288,4 +288,103 @@ if "$cli" init --role api --root "$tmp/escape,root"; then
 fi
 test ! -e "$tmp/escape,root/src"
 
+# Source-role and file-type guards run in the Oreslang guest, not the shell
+# bootstrap. Every denial must happen during preflight before adapter writes.
+expect_rejected() {
+  local label="$1" diagnostic="$2" output
+  shift 2
+  if output="$("$cli" "$@" 2>&1)"; then
+    echo "$label must be rejected" >&2
+    exit 1
+  fi
+  if [[ "$output" != *"$diagnostic"* ]]; then
+    echo "$label: missing expected diagnostic '$diagnostic': $output" >&2
+    exit 1
+  fi
+}
+
+cp -R "$repo/examples/hello-api" "$tmp/api-mixed-role"
+printf '// @ores-page / render\n' > "$tmp/api-mixed-role/src/routes/page.ores"
+expect_rejected "API route with page.ores" "source role mismatch" \
+  generate --kind all --root "$tmp/api-mixed-role"
+test ! -e "$tmp/api-mixed-role/src/routes/rpc.ores"
+test ! -e "$tmp/api-mixed-role/src/routes/lambda.ores"
+expect_rejected "read-only API inventory with page.ores" "source role mismatch" \
+  routes --root "$tmp/api-mixed-role"
+test ! -e "$tmp/api-mixed-role/generated"
+
+cp -R "$repo/examples/hello-web" "$tmp/web-mixed-role"
+printf '// @ores-route GET / show\n' > "$tmp/web-mixed-role/src/pages/route.ores"
+expect_rejected "web page with route.ores" "source role mismatch" \
+  generate --kind all --root "$tmp/web-mixed-role"
+test ! -e "$tmp/web-mixed-role/src/pages/lambda.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/api-nested-mixed-role"
+mkdir -p "$tmp/api-nested-mixed-role/src/routes/nested"
+printf '// @ores-page /nested render\n' > "$tmp/api-nested-mixed-role/src/routes/nested/page.ores"
+expect_rejected "nested incompatible page" "source role mismatch" \
+  generate --kind all --root "$tmp/api-nested-mixed-role"
+test ! -e "$tmp/api-nested-mixed-role/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/leaf-is-directory"
+mkdir "$tmp/leaf-is-directory/src/routes/route.ores.tmp"
+mv "$tmp/leaf-is-directory/src/routes/route.ores" "$tmp/leaf-is-directory/src/routes/route.ores.tmp/original.ores"
+mv "$tmp/leaf-is-directory/src/routes/route.ores.tmp" "$tmp/leaf-is-directory/src/routes/route.ores"
+expect_rejected "route.ores as directory" "source leaf must be a file" \
+  generate --kind all --root "$tmp/leaf-is-directory"
+test ! -e "$tmp/leaf-is-directory/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/handlers-is-directory"
+rm "$tmp/handlers-is-directory/src/routes/handlers.ores"
+mkdir "$tmp/handlers-is-directory/src/routes/handlers.ores"
+expect_rejected "handlers.ores as directory" "handlers.ores must be a file" \
+  generate --kind all --root "$tmp/handlers-is-directory"
+test ! -e "$tmp/handlers-is-directory/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/adapter-is-directory"
+mkdir "$tmp/adapter-is-directory/src/routes/rpc.ores"
+expect_rejected "rpc.ores as directory" "generated output must be a file" \
+  generate --kind all --root "$tmp/adapter-is-directory"
+test ! -e "$tmp/adapter-is-directory/src/routes/lambda.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/manifest-is-directory"
+mkdir -p "$tmp/manifest-is-directory/generated/route-manifest.json"
+expect_rejected "manifest output as directory" "generated output must be a file" \
+  generate --kind all --root "$tmp/manifest-is-directory"
+test ! -e "$tmp/manifest-is-directory/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/role-is-directory"
+rm "$tmp/role-is-directory/oreslang-stack.toml"
+mkdir "$tmp/role-is-directory/oreslang-stack.toml"
+expect_rejected "repository role manifest as directory" "project manifest must be a regular file" \
+  generate --kind all --root "$tmp/role-is-directory"
+test ! -e "$tmp/role-is-directory/src/routes/rpc.ores"
+
+# A role cannot silently ignore the alternate top-level source tree.
+cp -R "$repo/examples/hello-api" "$tmp/api-extra-pages"
+mkdir -p "$tmp/api-extra-pages/src/pages"
+expect_rejected "API with alternate pages source root" "source role mismatch" \
+  generate --kind all --root "$tmp/api-extra-pages"
+test ! -e "$tmp/api-extra-pages/src/routes/rpc.ores"
+test ! -e "$tmp/api-extra-pages/generated"
+
+cp -R "$repo/examples/hello-web" "$tmp/web-extra-routes"
+mkdir -p "$tmp/web-extra-routes/src/routes"
+expect_rejected "web with alternate routes source root" "source role mismatch" \
+  routes --root "$tmp/web-extra-routes"
+test ! -e "$tmp/web-extra-routes/generated"
+
+cp -R "$repo/examples/hello-api" "$tmp/api-extra-root-link"
+ln -s "$tmp/outside" "$tmp/api-extra-root-link/src/pages"
+expect_rejected "API with linked alternate pages source root" "source role mismatch" \
+  generate --kind all --root "$tmp/api-extra-root-link"
+test ! -e "$tmp/api-extra-root-link/src/routes/rpc.ores"
+
+cp -R "$repo/examples/hello-api" "$tmp/entry-is-directory"
+rm "$tmp/entry-is-directory/src/main.ores"
+mkdir "$tmp/entry-is-directory/src/main.ores"
+expect_rejected "entrypoint as a directory" "entrypoint must be a regular file" \
+  generate --kind all --root "$tmp/entry-is-directory"
+test ! -e "$tmp/entry-is-directory/src/routes/rpc.ores"
+
 echo "native Oreslang generator integration checks passed"
