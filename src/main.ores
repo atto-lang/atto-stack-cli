@@ -23,6 +23,15 @@ fnc is_error(String result): bool {
   return result.starts_with("ERROR:");
 }
 
+// The native metadata API resolves existing symlink targets in fs.exists.
+// Always admit a terminal symlink *before* probing existence; Oreslang '|'
+// does not provide the short-circuit guarantee needed for this security gate.
+// Call only for entries whose parent directory has already been admitted.
+fnc present_or_link(String path): bool {
+  if fs.is_symlink(path); then return true; fi
+  return fs.exists(path);
+}
+
 fnc quote_json(String raw): String {
   val String escaped = raw.replace_literal("\\", "\\\\")
     .replace_literal("\"", "\\\"")
@@ -286,7 +295,7 @@ fnc walk(String root, String dir, String url, String shape,
   val String wrong_leaf = dir + "/" + wrong_leaf_name;
   // Reject incompatible source roles even when a valid route/page also exists.
   // Otherwise a mixed tree is silently accepted and its other sources ignored.
-  if fs.is_symlink(wrong_leaf) | fs.exists(wrong_leaf); then
+  if present_or_link(wrong_leaf); then
     return error("source role mismatch: unexpected " + wrong_leaf_name + " in " + dir);
   fi
   if fs.is_symlink(leaf_path); then
@@ -379,7 +388,7 @@ fnc route_manifest(String root, String role, String kind, bool check, bool dry):
   val String forbidden = is_api(role) ? "pages" : "routes";
   val String forbidden_path = root + "/src/" + forbidden;
   // Reject another role's tree; accepting it silently omits routes at build time.
-  if fs.is_symlink(forbidden_path) | fs.exists(forbidden_path); then
+  if present_or_link(forbidden_path); then
     return error("source role mismatch: unexpected " + forbidden + " source tree");
   fi
   val String path = root + "/src/" + folder;
@@ -442,13 +451,11 @@ fnc init_project(String root, String entry, String role): String {
   val String generated_root = root + "/generated";
   val String infra_candidate = root + "/.oreslang-stack-infra.candidate.toml";
   val String lambda_candidate = root + "/.oreslang-stack-lambdas.candidate.toml";
-  if fs.exists(infra_candidate) | fs.is_symlink(infra_candidate) |
-    fs.exists(lambda_candidate) | fs.is_symlink(lambda_candidate); then
+  if present_or_link(infra_candidate) | present_or_link(lambda_candidate); then
     return error("init refuses existing stack candidate manifest");
   fi
-  if fs.exists(manifest) | fs.is_symlink(manifest) |
-    fs.exists(source_root) | fs.is_symlink(source_root) |
-    fs.exists(generated_root) | fs.is_symlink(generated_root); then
+  if present_or_link(manifest) | present_or_link(source_root) |
+    present_or_link(generated_root); then
     return error("init refuses existing manifest, src or generated paths");
   fi
 
@@ -511,7 +518,10 @@ fnc admission(String root, String entry, String action): String {
     return error("symlinked source root");
   fi
   val String entry_path = root + "/" + entry;
-  if fs.is_symlink(entry_path) | !fs.exists(entry_path) | fs.is_dir(entry_path); then
+  if fs.is_symlink(entry_path); then
+    return error("missing, symlinked or non-file Oreslang application entrypoint");
+  fi
+  if !fs.exists(entry_path) | fs.is_dir(entry_path); then
     return error("missing, symlinked or non-file Oreslang application entrypoint");
   fi
   if role == "infra" | role == "lambdas"; then
@@ -519,7 +529,10 @@ fnc admission(String root, String entry, String action): String {
       val String candidate = role == "infra" ?
         root + "/.oreslang-stack-infra.candidate.toml" :
         root + "/.oreslang-stack-lambdas.candidate.toml";
-      if fs.is_symlink(candidate) | !fs.exists(candidate) | fs.is_dir(candidate); then
+      if fs.is_symlink(candidate); then
+        return error("missing, symlinked or non-file candidate manifest");
+      fi
+      if !fs.exists(candidate) | fs.is_dir(candidate); then
         return error("missing, symlinked or non-file candidate manifest");
       fi
       val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
@@ -529,14 +542,14 @@ fnc admission(String root, String entry, String action): String {
       val String sibling = role == "infra" ?
         root + "/.oreslang-stack-lambdas.candidate.toml" :
         root + "/.oreslang-stack-infra.candidate.toml";
-      if fs.exists(sibling) | fs.is_symlink(sibling); then
+      if present_or_link(sibling); then
         return error("mixed infra/lambda candidate manifests denied");
       fi
-      if fs.exists(root + "/generated") | fs.is_symlink(root + "/generated"); then
+      if present_or_link(root + "/generated"); then
         return error("infra/lambdas may not claim generated adapters");
       fi
-      if fs.exists(root + "/src/routes") | fs.is_symlink(root + "/src/routes") |
-        fs.exists(root + "/src/pages") | fs.is_symlink(root + "/src/pages"); then
+      if present_or_link(root + "/src/routes") |
+        present_or_link(root + "/src/pages"); then
         return error("infra/lambdas cannot silently contain API/web routes");
       fi
       val String marker = role == "infra" ?
@@ -546,8 +559,15 @@ fnc admission(String root, String entry, String action): String {
       // under an absent sibling subtree: the native FS capability layer
       // resolves parents strictly and treats a missing parent as an error.
       if role == "infra"; then
-        if fs.is_symlink(root + "/src/infra"); then
+        val String infra = root + "/src/infra";
+        if fs.is_symlink(infra); then
           return error("symlinked candidate source tree");
+        fi
+        if !fs.exists(infra); then
+          return error("missing candidate source tree");
+        fi
+        if !fs.is_dir(infra); then
+          return error("candidate source parent must be a directory");
         fi
       else
         val String functions = root + "/src/functions";
@@ -560,11 +580,21 @@ fnc admission(String root, String entry, String action): String {
         if !fs.is_dir(functions); then
           return error("candidate source parent must be a directory");
         fi
-        if fs.is_symlink(functions + "/hello"); then
+        val String hello = functions + "/hello";
+        if fs.is_symlink(hello); then
           return error("symlinked candidate source tree");
         fi
+        if !fs.exists(hello); then
+          return error("missing candidate source tree");
+        fi
+        if !fs.is_dir(hello); then
+          return error("candidate source parent must be a directory");
+        fi
       fi
-      if fs.is_symlink(marker) | !fs.exists(marker) | fs.is_dir(marker); then
+      if fs.is_symlink(marker); then
+        return error("missing, symlinked or non-file candidate Oreslang source");
+      fi
+      if !fs.exists(marker) | fs.is_dir(marker); then
         return error("missing, symlinked or non-file candidate Oreslang source");
       fi
       return "ORESLANG_STACK_ACTION_v1:check";
