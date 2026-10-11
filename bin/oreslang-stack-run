@@ -14,11 +14,25 @@ if [[ ! -f "$bundle/.oreslang-stack-entry" || -L "$bundle/.oreslang-stack-entry"
 fi
 IFS= read -r entry < "$bundle/.oreslang-stack-entry" || [[ -n "${entry:-}" ]]
 case "$entry" in
-  src/*) ;;
+  src/*.ores) ;;
   *) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
 esac
 case "$entry" in
-  */../*|*/..|*[![:print:]]*) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
+  src/|*//*|*/./*|*/.|*/../*|*/..|*[![:print:]]*) echo "unsafe Oreslang bundle entrypoint" >&2; exit 1 ;;
+esac
+if [[ ! -d "$bundle/src" || -L "$bundle/src" ]]; then
+  echo "Oreslang source bundle has an invalid src directory" >&2
+  exit 1
+fi
+# The final entry may be regular while one of its parents is a symlink.
+# Resolve it against the unpacked bundle, never against the invoking cwd.
+if ! entry_parent="$(cd -- "$bundle/$(dirname -- "$entry")" && pwd -P)"; then
+  echo "Oreslang bundle entrypoint parent is missing" >&2
+  exit 1
+fi
+case "$entry_parent" in
+  "$bundle/src"|"$bundle/src/"*) ;;
+  *) echo "Oreslang bundle entrypoint escapes src" >&2; exit 1 ;;
 esac
 if [[ ! -f "$bundle/$entry" || -L "$bundle/$entry" ]]; then
   echo "Oreslang application entrypoint missing from source bundle" >&2
