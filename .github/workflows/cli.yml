@@ -33,7 +33,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          bash -n bin/oreslang-stack
+          bash -n bin/oreslang-stack bin/oreslang-stack-run tests/bootstrap-contract.sh tests/native-generator-contract.sh
           bash tests/bootstrap-contract.sh
       - name: Assert no Rust CLI remains
         run: |
