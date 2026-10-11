@@ -542,9 +542,27 @@ fnc admission(String root, String entry, String action): String {
       val String marker = role == "infra" ?
         root + "/src/infra/config.ores" :
         root + "/src/functions/hello/handler.ores";
-      if fs.is_symlink(root + "/src/infra") | fs.is_symlink(root + "/src/functions") |
-        fs.is_symlink(root + "/src/functions/hello"); then
-        return error("symlinked candidate source tree");
+      // The candidate source layout is role-specific. Do not query metadata
+      // under an absent sibling subtree: the native FS capability layer
+      // resolves parents strictly and treats a missing parent as an error.
+      if role == "infra"; then
+        if fs.is_symlink(root + "/src/infra"); then
+          return error("symlinked candidate source tree");
+        fi
+      else
+        val String functions = root + "/src/functions";
+        if fs.is_symlink(functions); then
+          return error("symlinked candidate source tree");
+        fi
+        if !fs.exists(functions); then
+          return error("missing candidate source tree");
+        fi
+        if !fs.is_dir(functions); then
+          return error("candidate source parent must be a directory");
+        fi
+        if fs.is_symlink(functions + "/hello"); then
+          return error("symlinked candidate source tree");
+        fi
       fi
       if fs.is_symlink(marker) | !fs.exists(marker) | fs.is_dir(marker); then
         return error("missing, symlinked or non-file candidate Oreslang source");
