@@ -430,7 +430,7 @@ done
 cp -R "$tmp/init-infra" "$tmp/candidate-source-root-symlink"
 mv "$tmp/candidate-source-root-symlink/src" "$tmp/candidate-source-root-symlink/src.saved"
 ln -s src.saved "$tmp/candidate-source-root-symlink/src"
-expect_rejected "candidate symlinked source root" "symlinked source root" \
+expect_rejected "candidate symlinked source root rejected by host" "symlink or invalid source/generated directory" \
   check --root "$tmp/candidate-source-root-symlink"
 
 echo "native Oreslang generator integration checks passed"
