@@ -110,6 +110,10 @@ if [[ ! -d "$root" || -L "$root" ]]; then
   exit 2
 fi
 root="$(cd -- "$root" && pwd -P)"
+# Permission lists are comma-delimited: reject ambiguous root capabilities.
+case "$root" in
+  *,*|*$'\n'*|*$'\r'*) echo "oreslang-stack: unsafe project root capability delimiter" >&2; exit 2 ;;
+esac
 export ORESLANG_STACK_ROOT="$root"
 if [[ "$requested_command" == "init" ]]; then
   if [[ -e "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ||

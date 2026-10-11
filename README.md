@@ -1,5 +1,20 @@
 # Oreslang Stack CLI
 
+## Project identity: Oreslang Stack is not ORES Stack
+
+**Oreslang Stack** and **ORES Stack** are **separate projects with different CLIs and release tracks**. This repository provides the **Oreslang-native `oreslang-stack` CLI**, not the Rust `ores-stack` CLI.
+
+| | Oreslang Stack (this repository) | ORES Stack (separate project) |
+| --- | --- | --- |
+| CLI source | [`ores-truffle-oreslang/oreslang-stack-cli`](https://github.com/ores-truffle-oreslang/oreslang-stack-cli) | [`ores-stack/ores-stack-cli`](https://github.com/ores-stack/ores-stack-cli) |
+| Command | `oreslang-stack` | `ores-stack` |
+| Implementation | Oreslang `src/main.ores`, POSIX bootstrap, and Oreslang Java/Graal compiler/runtime | Rust/Cargo tooling and ORES Stack contracts |
+| Focus | Oreslang API/web scaffolding, route discovery, native-source generation, checks and source packaging | ORES Stack module/admission workflows, lambda adapter generation, provider-bound WASM materialization and deployment tooling |
+
+Do **not** substitute the other CLI, its config/manifest, binary, tests, or deployment claims. In particular, Oreslang Stack's `deploy` currently fails closed; an ORES Stack deployment feature does not make an Oreslang Stack deployment supported.
+
+**CI mirror rule:** An exact copy of private Oreslang source placed temporarily in an `ores-stack` repository (or another funded test organization) is **only a CI fixture**. Use only an explicitly authorized **private** destination with controlled access. The test repo's `GITHUB_TOKEN` cannot implicitly check out the private source across organizations: copy the source Git tree into the test repo through an authorized GitHub client, then let Actions check out **its own local mirror** with read-only permissions. Require the source commit and mirrored subtree Git tree SHAs to match, plus allocated runner steps and **executed, passing checks** on that exact tree. Do not expose source through public branches/artifacts/logs, and remove the temporary mirror after retaining evidence. Source ownership, review, and releases remain in `ores-truffle-oreslang`.
+
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
 RPC/Lambda source generation live in [`src/main.ores`](src/main.ores).
@@ -24,12 +39,14 @@ oreslang-stack generate --kind all --root examples/hello-api
 oreslang-stack generate --kind all --check --root examples/hello-api
 oreslang-stack check --root examples/hello-api
 oreslang-stack build --root examples/hello-api
+# Expected to fail closed: deployment has no certified backend yet.
 oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 ```
 
 | Command | Behavior |
 |---|---|
-| `init` | Oreslang-native fresh API/web sources and candidate-only infra/Lambda scaffolds; refuses existing `src/`, `generated/`, or project manifests |\n| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
+| `init` | Oreslang-native fresh API/web sources and candidate-only infra/Lambda scaffolds; refuses existing `src/`, `generated/`, or project manifests |
+| `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
@@ -59,8 +76,10 @@ All filesystem writes are scoped to the selected repository. Project initializat
 
 ## Source layout
 
-The project declares the role in `oreslang-stack.toml` as
-`api`, `admin-api`, `web` or `admin-web`. API repositories author
+For API/web repositories, `oreslang-stack.toml` declares one of
+`api`, `admin-api`, `web` or `admin-web`. The additional `infra` and
+`lambdas` roles use the non-deployable candidate profile described above.
+API repositories author
 `src/routes/**/route.ores` with sibling `handlers.ores` and
 `// @ores-route GET /users/{id} show` annotations. Web repositories author
 `src/pages/**/page.ores` with `// @ores-page /users/{id} render`.
@@ -84,14 +103,18 @@ race-free openat handles**, so hostile mutable project trees are not supported.
 - A Java/Graal Oreslang executable available as `oreslang` (or
   `ORESLANG_BIN=/path/to/executable`).
 - `flags2env` from canonical `flags-2-env/flags-2-env`.
-- Directory metadata and string helpers originating in [Java/Graal PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496), plus the canonical cooperative native `_blocking` I/O runtime in [Java/Graal PR #522](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/522). The suffix means **source-level synchronous results with automatic continuation suspension**, never OS scheduler carrier blocking. Until those dependencies are released and pinned, a stock compiler may not run this CLI.
+- Oreslang stdlib additions from
+  [`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496):
+  directory enumeration, symlink metadata, and safe literal string operations.
+  **PR #496 is merged into the source repository (October 9, 2026).** The CLI still needs a **built/installed Java/Graal runtime that actually includes these APIs**; a merged PR by itself does not establish packaged runtime compatibility.
+- Cooperative `_blocking` native I/O depends on [Java/Graal PR #522](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/522): source-level synchronous results with continuation suspension that must not park actor scheduler carriers. This integration must be released and pinned before the migrated CLI can be distributed.
 
 Use `FLAGS2ENV_BIN` to locate a custom flags parser executable.
 The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser.
 
 ```sh
 bash tests/bootstrap-contract.sh
-# Only after installing a real Oreslang runtime with PR #522:
+# Only after installing a real Oreslang runtime containing PRs #496 and #522:
 bash tests/native-generator-contract.sh
 ```
 
@@ -105,4 +128,4 @@ real interpreter and its filesystem permission APIs. See
 
 A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
-still experimental and is not usable as the CLI runtime. Real Java/Graal CLI init, check, routes and denial integration passed with an exact migrated source snapshot in [run #38005034460](https://github.com/athlet-o/athleto-e2e/actions/runs/38005034460). This PR remains draft until the compiler runtime dependency is released/pinned and the CLI's own distribution workflows are verified.
+still experimental and is not usable as the CLI runtime. The original migrated CLI passed focused Java/Graal init, check, routes and denial tests in [mirrored run #38005034460](https://github.com/athlet-o/athleto-e2e/actions/runs/38005034460), but this does not certify the current merged tree or distribution. Do not claim deployment certification until executed Java/Graal integration tests, the installed stdlib/runtime dependency, and backend-specific deployment receipts have been verified.

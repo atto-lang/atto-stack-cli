@@ -280,4 +280,12 @@ for role in infra lambdas; do
   mv "$candidate.saved" "$candidate"
 done
 
+# Capability argument delimiter cannot escape a project root during init.
+mkdir -p "$tmp/escape,root"
+if "$cli" init --role api --root "$tmp/escape,root"; then
+  echo "comma root must be rejected before source writes" >&2
+  exit 1
+fi
+test ! -e "$tmp/escape,root/src"
+
 echo "native Oreslang generator integration checks passed"

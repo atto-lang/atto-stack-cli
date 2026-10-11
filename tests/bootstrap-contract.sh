@@ -227,4 +227,14 @@ if MOCK_COMPILER_REJECT=true "$repo/bin/oreslang-stack" generate --kind all --ro
   exit 1
 fi
 
+# Permission strings are comma-delimited in the runtime. Reject roots with
+# commas before guest launch rather than granting separate roots accidentally.
+mkdir -p "$tmp/comma,root"
+if MOCK_GUEST_INVOCATION_FILE="$tmp/comma-guest" "$repo/bin/oreslang-stack" init --role api --root "$tmp/comma,root"; then
+  echo "comma-containing project root must fail closed" >&2
+  exit 1
+fi
+test ! -e "$tmp/comma-guest"
+test ! -e "$tmp/comma,root/src"
+
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
