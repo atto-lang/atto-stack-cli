@@ -112,6 +112,9 @@ if "$repo/bin/oreslang-stack" build --root "$tmp/project"; then
   echo "directory destination must be rejected" >&2
   exit 1
 fi
+# Restore the output path after the negative case; later bundle tests must
+# exercise a successful build, not the intentional directory collision.
+rmdir "$tmp/project/dist/oreslang-stack-source.tar.gz"
 if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --entry src/../escape.ores; then
   echo "entrypath traversal must fail" >&2
   exit 1
