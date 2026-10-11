@@ -387,4 +387,50 @@ expect_rejected "entrypoint as a directory" "entrypoint must be a regular file" 
   generate --kind all --root "$tmp/entry-is-directory"
 test ! -e "$tmp/entry-is-directory/src/routes/rpc.ores"
 
+
+# Candidate roles must fail closed on file-type collisions and source-root links.
+for role in infra lambdas; do
+  root="$tmp/init-$role"
+  candidate="$root/.oreslang-stack-$role.candidate.toml"
+  mv "$candidate" "$candidate.saved"
+  mkdir "$candidate"
+  expect_rejected "$role candidate manifest as directory" "non-file candidate manifest" \
+    check --root "$root"
+  rmdir "$candidate"
+  mv "$candidate.saved" "$candidate"
+
+  if [[ "$role" == infra ]]; then
+    marker="$root/src/infra/config.ores"
+    parent="$root/src/infra"
+  else
+    marker="$root/src/functions/hello/handler.ores"
+    parent="$root/src/functions/hello"
+  fi
+  mv "$marker" "$marker.saved"
+  mkdir "$marker"
+  expect_rejected "$role candidate source as directory" "non-file candidate Oreslang source" \
+    check --root "$root"
+  rmdir "$marker"
+  mv "$marker.saved" "$marker"
+
+  mv "$parent" "$parent.saved"
+  ln -s "$parent.saved" "$parent"
+  expect_rejected "$role candidate parent as symlink" "symlinked candidate source tree" \
+    check --root "$root"
+  rm "$parent"
+  mv "$parent.saved" "$parent"
+
+  ln -s "$tmp/nonexistent-foreign-source" "$root/src/routes"
+  expect_rejected "$role broken symlink route tree" "infra/lambdas cannot silently contain API/web routes" \
+    check --root "$root"
+  rm "$root/src/routes"
+  "$cli" check --root "$root" >/dev/null
+done
+
+cp -R "$tmp/init-infra" "$tmp/candidate-source-root-symlink"
+mv "$tmp/candidate-source-root-symlink/src" "$tmp/candidate-source-root-symlink/src.saved"
+ln -s src.saved "$tmp/candidate-source-root-symlink/src"
+expect_rejected "candidate symlinked source root" "symlinked source root" \
+  check --root "$tmp/candidate-source-root-symlink"
+
 echo "native Oreslang generator integration checks passed"

@@ -506,6 +506,10 @@ fnc init_project(String root, String entry, String role): String {
 fnc admission(String root, String entry, String action): String {
   val String role = repository_role(root);
   if is_error(role); then return role; fi
+  // The entrypoint check alone would not detect a symlinked src/ ancestor.
+  if fs.is_symlink(root + "/src"); then
+    return error("symlinked source root");
+  fi
   val String entry_path = root + "/" + entry;
   if fs.is_symlink(entry_path) | !fs.exists(entry_path) | fs.is_dir(entry_path); then
     return error("missing, symlinked or non-file Oreslang application entrypoint");
@@ -515,8 +519,8 @@ fnc admission(String root, String entry, String action): String {
       val String candidate = role == "infra" ?
         root + "/.oreslang-stack-infra.candidate.toml" :
         root + "/.oreslang-stack-lambdas.candidate.toml";
-      if fs.is_symlink(candidate) | !fs.exists(candidate); then
-        return error("missing or symlinked non-deployable candidate manifest");
+      if fs.is_symlink(candidate) | !fs.exists(candidate) | fs.is_dir(candidate); then
+        return error("missing, symlinked or non-file candidate manifest");
       fi
       val String expected = "[candidate]\nrole = \"" + role + "\"\ndeployable = false\n";
       if fs.read_text(candidate) != expected; then
@@ -531,14 +535,19 @@ fnc admission(String root, String entry, String action): String {
       if fs.exists(root + "/generated") | fs.is_symlink(root + "/generated"); then
         return error("infra/lambdas may not claim generated adapters");
       fi
-      if fs.exists(root + "/src/routes") | fs.exists(root + "/src/pages"); then
+      if fs.exists(root + "/src/routes") | fs.is_symlink(root + "/src/routes") |
+        fs.exists(root + "/src/pages") | fs.is_symlink(root + "/src/pages"); then
         return error("infra/lambdas cannot silently contain API/web routes");
       fi
       val String marker = role == "infra" ?
         root + "/src/infra/config.ores" :
         root + "/src/functions/hello/handler.ores";
-      if fs.is_symlink(marker) | !fs.exists(marker); then
-        return error("missing or symlinked candidate Oreslang source");
+      if fs.is_symlink(root + "/src/infra") | fs.is_symlink(root + "/src/functions") |
+        fs.is_symlink(root + "/src/functions/hello"); then
+        return error("symlinked candidate source tree");
+      fi
+      if fs.is_symlink(marker) | !fs.exists(marker) | fs.is_dir(marker); then
+        return error("missing, symlinked or non-file candidate Oreslang source");
       fi
       return "ORESLANG_STACK_ACTION_v1:check";
     fi
