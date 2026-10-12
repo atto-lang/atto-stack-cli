@@ -98,12 +98,12 @@ fi
 
 # A project entrypoint must stay relative to its selected root.
 case "$entry" in
-  ""|/*|..|../*|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
+  ""|/*|..|../*|src/|*//*|*/./*|*/.|*/../*|*/..|*[![:print:]]*) echo "oreslang-stack: unsafe --entry" >&2; exit 2 ;;
 esac
-# Bundled builds must include their entrypoint; restrict it to src/.
+# The source bundle contains checked .ores files under src/ only.
 case "$entry" in
-  src/*) ;;
-  *) echo "oreslang-stack: entrypoint must be below src/" >&2; exit 2 ;;
+  src/*.ores) ;;
+  *) echo "oreslang-stack: entrypoint must be an .ores file below src/" >&2; exit 2 ;;
 esac
 if [[ ! -d "$root" || -L "$root" ]]; then
   echo "oreslang-stack: root must be an existing non-symlink directory" >&2
@@ -136,10 +136,16 @@ if [[ "$requested_command" != "init" ]] && ! entry_parent="$(cd -- "$root/$(dirn
   echo "oreslang-stack: entrypoint parent is missing" >&2
   exit 2
 fi
-case "${entry_parent:-$root}" in
-  "$root"|"$root"/*) ;;
-  *) echo "oreslang-stack: entrypoint path escapes project root" >&2; exit 2 ;;
-esac
+if [[ "$requested_command" != "init" ]]; then
+  case "${entry_parent:-}" in
+    "$root/src"|"$root/src/"*) ;;
+    *) echo "oreslang-stack: entrypoint path escapes project src" >&2; exit 2 ;;
+  esac
+  if [[ ! -f "$root/$entry" ]]; then
+    echo "oreslang-stack: entrypoint must be a regular file" >&2
+    exit 2
+  fi
+fi
 
 # Read-only and env permissions are explicitly scoped. No --allow-all.
 # The .ores program emits exactly one validated action; any other output
@@ -342,9 +348,8 @@ case "$action" in
     printf '%s\n' "$entry" > "$stage/.oreslang-stack-entry"
     cp "$root/generated/route-manifest.json" "$stage/generated/route-manifest.json"
     cp "$cli_home/bin/oreslang-stack-run" "$stage/bin/oreslang-stack-run"
-    if [[ -f "$root/.oreslangc.cfg.toml" ]]; then
-      cp "$root/.oreslangc.cfg.toml" "$stage/.oreslangc.cfg.toml"
-    fi
+    # Project-local compiler configuration can contain tokens and private
+    # paths. Never copy it implicitly into a distributable source bundle.
     tar -czf "$tmp" -C "$stage" .
     rm -rf "$stage"
     mv -f -- "$tmp" "$artifact"
