@@ -36,6 +36,10 @@ if [[ "$1" == --allow-env=* ]]; then
     echo 'ERROR: LLVM not supported'
     exit 0
   fi
+  if [[ -n "${MOCK_FORCED_ACTION:-}" ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$MOCK_FORCED_ACTION"
+    exit 0
+  fi
   case "$ORESLANG_STACK_COMMAND" in
     init)
       if [[ -e "$ORESLANG_STACK_ROOT/oreslang-stack.toml" ||
@@ -82,10 +86,23 @@ if [[ "$1" == --allow-env=* ]]; then
   esac
   exit 0
 fi
+if [[ -n "${MOCK_APPLICATION_RUN_FILE:-}" ]]; then
+  touch "$MOCK_APPLICATION_RUN_FILE"
+fi
 printf 'app started\n'
 EOS
 chmod +x "$tmp/fake-oreslang"
 export ORESLANG_BIN="$tmp/fake-oreslang"
+# A receipt for another operation must never elevate a read-only request.
+for forced in dev build; do
+  if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \
+      "$repo/bin/oreslang-stack" routes --root "$tmp/project"; then
+    echo "mismatched action receipt must fail: $forced" >&2
+    exit 1
+  fi
+  test ! -e "$tmp/spoofed-app"
+  test ! -e "$tmp/project/dist"
+done
 test "$("$repo/bin/oreslang-stack" dev --root "$tmp/project")" = "app started"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" | grep -F 'NOT a compiled'
 test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"

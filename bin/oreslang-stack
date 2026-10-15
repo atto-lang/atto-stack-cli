@@ -285,12 +285,14 @@ case "$action" in
     printf '%s\n' "all generated adapters and Oreslang sources verified"
     ;;
   ORESLANG_STACK_ACTION_v1:dev)
+    [[ "$requested_command" == "dev" ]] || exit 1
     compiler_check_all
     # Only loopback network access is granted by default to dev servers.
     # Production/adaptor permissions must be explicit and narrower.
     exec "$oreslang_bin" --allow-read="$root" --allow-net=127.0.0.1,localhost "$root/$entry"
     ;;
   ORESLANG_STACK_ACTION_v1:build)
+    [[ "$requested_command" == "build" ]] || exit 1
     if ! compiler_check_all; then
       echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
       exit 1
