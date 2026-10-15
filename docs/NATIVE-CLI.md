@@ -30,15 +30,11 @@ Infra and Lambdas candidate profiles: see [INFRA_LAMBDAS.md](INFRA_LAMBDAS.md). 
 
 ## Runtime dependency
 
-[`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496)
-adds `fs.list_dir/is_dir/is_symlink`, `String.split_literal/trim/starts_with/
-ends_with/contains_literal/is_identifier/is_route_segment`. Both the CLI and
-runtime PRs require independent Java compiler test evidence before merge.
+[`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496) introduced directory metadata and literal String helpers. The current canonical API requires [`oreslang-source.java` PR #522](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/522): `fs.list_dir_blocking`, `fs.is_dir_blocking`, `fs.is_symlink_blocking`, `fs.read_text_blocking`, `fs.write_text_atomic_blocking`, etc., and `stdio.println_blocking`. These names return normal source values, while the runtime yields the calling continuation and performs I/O off the actor carrier. `_blocking` never authorizes parking a scheduler thread. The Java compiler currently supports opt-in strict naming via `-Dores.compiler.strictNativeIo=true`.
 
 ## Remaining engineering milestones
 
-1. Prove CLI `.ores` source typechecks and generated adapters compile using
-   the Java/Graal toolchain. No GHA status can substitute for real tests.
+1. Release-pin the Java/Graal compiler and run the production CLI integration suite against its exact released artifact. The migrated source **already passed strict typechecking** in funded GraalVM CI, and the real CLI executed init, repeated-init refusal, read-only check/drift refusal, routes inventory, deploy refusal, and LLVM-backend refusal in [run #38005034460](https://github.com/athlet-o/athleto-e2e/actions/runs/38005034460). The permanent release gate and deployment adapters remain outstanding.
 2. Typed TypeSpec/Protobuf/RPC transport generation with domain contracts and executable GraphQL transport. GraphQL currently generates SDL fragments and source resolvers, NOT a GraphQL query parser, schema merger, or HTTP endpoint.
 3. Actor-aware hot reload and dev watching, supervisor lifecycle and rollback.
 4. Actual self-contained compiled backend artifacts and reproducible provenance.

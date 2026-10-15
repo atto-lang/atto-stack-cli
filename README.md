@@ -120,13 +120,14 @@ concurrently.
   [`oreslang-source.java` PR #496](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/496):
   directory enumeration, symlink metadata, and safe literal string operations.
   **PR #496 is merged into the source repository (October 9, 2026).** The CLI still needs a **built/installed Java/Graal runtime that actually includes these APIs**; a merged PR by itself does not establish packaged runtime compatibility.
+- Cooperative `_blocking` native I/O depends on [Java/Graal PR #522](https://github.com/ores-truffle-oreslang/oreslang-source.java/pull/522): source-level synchronous results with continuation suspension that must not park actor scheduler carriers. This integration must be released and pinned before the migrated CLI can be distributed.
 
 Use `FLAGS2ENV_BIN` to locate a custom flags parser executable.
 The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser.
 
 ```sh
 bash tests/bootstrap-contract.sh
-# Only after installing a real Oreslang runtime with PR #496:
+# Only after installing a real Oreslang runtime containing PRs #496 and #522:
 bash tests/native-generator-contract.sh
 ```
 
@@ -140,4 +141,4 @@ real interpreter and its filesystem permission APIs. See
 
 A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
-still experimental and is not usable as the CLI runtime. Do not claim deployment certification until executed Java/Graal integration tests, the installed stdlib/runtime dependency, and backend-specific deployment receipts have been verified.
+still experimental and is not usable as the CLI runtime. The original migrated CLI passed focused Java/Graal init, check, routes and denial tests in [mirrored run #38005034460](https://github.com/athlet-o/athleto-e2e/actions/runs/38005034460), but this does not certify the current merged tree or distribution. Do not claim deployment certification until executed Java/Graal integration tests, the installed stdlib/runtime dependency, and backend-specific deployment receipts have been verified.
