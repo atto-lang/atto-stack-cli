@@ -39,6 +39,10 @@ oreslang-stack generate --kind all --root examples/hello-api
 oreslang-stack generate --kind all --check --root examples/hello-api
 oreslang-stack check --root examples/hello-api
 oreslang-stack build --root examples/hello-api
+printf '%s' 'ping' | oreslang-stack invoke \
+  --root /path/to/lambdas-repo \
+  --entry src/functions/hello/handler.ores \
+  --function handler.invoke
 # Expected to fail closed: deployment has no certified backend yet.
 oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 ```
@@ -51,6 +55,7 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
 | `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
 | `build` | Generation, compiler checks, a source distribution containing a runnable `bin/oreslang-stack-run` (requires installed Oreslang); **not a compiled native/JVM/WASM executable** |
+| `invoke` | Compiler-check, then execute one explicit public `String -> String` function through the Java/Graal runtime's strict provider-neutral Lambda host; event on stdin, response on stdout |
 | `deploy` | Explicit **hard failure** until a backend-specific certified deploy adapter exists |
 
 ## Multi-repository bootstrap
@@ -72,7 +77,7 @@ All filesystem writes are scoped to the selected repository. Project initializat
 
 ## Infra and Lambda repositories
 
-`infra` and `lambdas` have a separate fail-closed candidate profile. `init` creates source-only examples and explicit `deployable = false` manifests. `check` typechecks their sources but **does not** run cloud deployments or create AWS Lambda bootstraps; `routes`, `generate`, `dev`, `build`, and `deploy` are denied for these two roles. See [the infra/Lambda admission guide](docs/INFRA_LAMBDAS.md) for actual provider and runtime requirements.
+`infra` and `lambdas` have a separate fail-closed candidate profile. `init` creates source-only examples and explicit `deployable = false` manifests. `check` typechecks their sources but **does not** run cloud deployments or create AWS Lambda bootstraps. The `lambdas` role additionally permits `invoke` for an explicit source file below `src/functions/` and a public function name, using the strict Java/Graal Lambda host from `oreslang-source.java#1151`. `infra` cannot invoke; `routes`, `generate`, `dev`, `build`, and `deploy` remain denied for candidate repositories. See [the infra/Lambda admission guide](docs/INFRA_LAMBDAS.md) for provider/runtime boundaries.
 
 ## Source layout
 
@@ -131,8 +136,11 @@ bash tests/native-generator-contract.sh
 ```
 
 Tests using a mock Oreslang command only prove host bootstrap behavior,
-**not native language compilation**. Full native generator tests require the
-real interpreter and its filesystem permission APIs. See
+including invoke receipt/argument gating; they **do not prove native Lambda
+execution**. Real local invocation additionally requires an installed
+Java/Graal Oreslang runtime containing the provider-neutral Lambda host from
+`oreslang-source.java#1151`. Full native generator tests require the real
+interpreter and its filesystem permission APIs. See
 [`docs/GENERATION.md`](docs/GENERATION.md) and
 [`docs/NATIVE-CLI.md`](docs/NATIVE-CLI.md).
 
