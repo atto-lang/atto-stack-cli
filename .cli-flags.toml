@@ -70,6 +70,16 @@ help = "Check generated output byte equality without writing."
 env = "ORESLANG_STACK_COMMAND_CHECK"
 help = "Check adapter drift and run the native Oreslang compiler on every source."
 
+[commands.invoke]
+env = "ORESLANG_STACK_COMMAND_INVOKE"
+help = "Invoke one public Oreslang String -> String function locally through the strict Lambda host."
+
+[commands.invoke.flags.function]
+env = "ORESLANG_STACK_FUNCTION"
+aliases = ["function"]
+type = "string"
+help = "Required public function name, for example handler.invoke or lambda.invoke_show."
+
 [commands.dev]
 env = "ORESLANG_STACK_COMMAND_DEV"
 help = "Run the Oreslang application once with the Java/Graal runtime."
