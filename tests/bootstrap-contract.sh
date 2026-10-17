@@ -40,10 +40,39 @@ if [[ "$1" == --allow-env=* ]]; then
       fi
     done
   fi
-  if [[ "$ORESLANG_STACK_BACKEND" != graal ]]; then
-    echo 'ERROR: LLVM not supported'
-    exit 0
-  fi
+  case "$ORESLANG_STACK_BACKEND:$ORESLANG_STACK_HOST" in
+    graal:local) ;;
+    graal:graal-show)
+      echo 'ERROR: backend/host planned but not executable: graal+graal-show'
+      exit 0 ;;
+    llvm:scintilla-run)
+      echo 'ERROR: backend/host planned but not executable: llvm-native+scintilla-run'
+      exit 0 ;;
+    llvm:litegraph)
+      echo 'ERROR: backend/host planned but not executable: llvm-native+litegraph'
+      exit 0 ;;
+    llvm:wasm-xprs)
+      echo 'ERROR: backend/host planned but not executable: llvm-wasm32-wasi+wasm-xprs'
+      exit 0 ;;
+    llvm:lunatic-lorry)
+      echo 'ERROR: backend/host planned but not executable: llvm-wasm32-wasi+lunatic-lorry'
+      exit 0 ;;
+    wasm:wasm-xprs|wasm:lunatic-lorry)
+      echo "ERROR: backend/host future backend not executable: $ORESLANG_STACK_BACKEND+$ORESLANG_STACK_HOST"
+      exit 0 ;;
+    dotnet:scintilla-run)
+      echo 'ERROR: backend/host planned but not executable: dotnet-nativeaot+scintilla-run; ORW1 adapter pending'
+      exit 0 ;;
+    js:iso-lattes)
+      echo 'ERROR: backend/host future backend not executable: js+iso-lattes'
+      exit 0 ;;
+    graal:*|llvm:*|wasm:*|dotnet:*|js:*)
+      echo "ERROR: unsupported backend/host combination: $ORESLANG_STACK_BACKEND+$ORESLANG_STACK_HOST"
+      exit 0 ;;
+    *)
+      echo "ERROR: unknown backend: $ORESLANG_STACK_BACKEND"
+      exit 0 ;;
+  esac
   if [[ -n "${MOCK_FORCED_ACTION:-}" ]]; then
     printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$MOCK_FORCED_ACTION"
     exit 0
@@ -153,10 +182,53 @@ if "$repo/bin/oreslang-stack" dev --root "$tmp/project" --bad-flag; then
   echo "unknown flags must fail" >&2
   exit 1
 fi
-if "$repo/bin/oreslang-stack" build --backend llvm --root "$tmp/project"; then
-  echo "llvm not admitted" >&2
+if output="$("$repo/bin/oreslang-stack" build --backend llvm --host scintilla-run --root "$tmp/project" 2>&1)"; then
+  echo "planned llvm/scintilla route must not execute" >&2
   exit 1
 fi
+grep -F 'llvm-native+scintilla-run' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend llvm --host wasm-xprs --root "$tmp/project" 2>&1)"; then
+  echo "planned llvm/wasm route must not execute" >&2
+  exit 1
+fi
+grep -F 'llvm-wasm32-wasi+wasm-xprs' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend dotnet --host scintilla-run --root "$tmp/project" 2>&1)"; then
+  echo "planned dotnet/scintilla route must not execute before ORW1 adapter" >&2
+  exit 1
+fi
+grep -F 'ORW1 adapter pending' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend graal --host graal-show --root "$tmp/project" 2>&1)"; then
+  echo "planned graal-show route must not execute before host adapter receipt" >&2
+  exit 1
+fi
+grep -F 'graal+graal-show' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend wasm --host lunatic-lorry --root "$tmp/project" 2>&1)"; then
+  echo "future wasm/lunatic route must not execute" >&2
+  exit 1
+fi
+grep -F 'wasm+lunatic-lorry' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend js --host iso-lattes --root "$tmp/project" 2>&1)"; then
+  echo "future js/iso-lattes route must not execute" >&2
+  exit 1
+fi
+grep -F 'js+iso-lattes' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend graal --host scintilla-run --root "$tmp/project" 2>&1)"; then
+  echo "invalid graal/scintilla combination must fail" >&2
+  exit 1
+fi
+grep -F 'unsupported backend/host combination: graal+scintilla-run' <<<"$output"
+
+if output="$("$repo/bin/oreslang-stack" build --backend mystery --host local --root "$tmp/project" 2>&1)"; then
+  echo "unknown backend must fail" >&2
+  exit 1
+fi
+grep -F 'unknown backend: mystery' <<<"$output"
 ln -s "$tmp/project" "$tmp/project-link"
 if "$repo/bin/oreslang-stack" dev --root "$tmp/project-link"; then
   echo "symlink root must fail" >&2
@@ -191,6 +263,14 @@ if "$repo/bin/oreslang-stack" init --root "$tmp/bad-backend" --role api --backen
   exit 1
 fi
 test ! -e "$tmp/bad-backend/src"
+
+mkdir -p "$tmp/bad-host"
+if MOCK_GUEST_INVOCATION_FILE="$tmp/bad-host-guest"     "$repo/bin/oreslang-stack" init --root "$tmp/bad-host" --role api     --backend graal --host graal-show; then
+  echo "init must refuse non-local hosts before guest launch" >&2
+  exit 1
+fi
+test ! -e "$tmp/bad-host/src"
+test ! -e "$tmp/bad-host-guest"
 
 
 for role in infra lambdas; do
