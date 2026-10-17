@@ -185,7 +185,19 @@ esac
 # Independent host deny gate: no guest process starts for unsupported
 # operations on infra/Lambda candidates, even when role whitespace varies.
 if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
-  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"infra"[[:space:]]*
+  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"infra"[[:space:]]*$' "$root/oreslang-stack.toml"; then
+    case "$requested_command" in
+      check|deploy) ;;
+      *) echo "oreslang-stack: infra candidate role forbids this command" >&2; exit 2 ;;
+    esac
+  elif grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"lambdas"[[:space:]]*$' "$root/oreslang-stack.toml"; then
+    case "$requested_command" in
+      check|invoke|deploy) ;;
+      *) echo "oreslang-stack: Lambda candidate role forbids this command" >&2; exit 2 ;;
+    esac
+  fi
+fi
+
 if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
