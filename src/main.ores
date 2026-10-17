@@ -525,7 +525,14 @@ fnc admission(String root, String entry, String action): String {
     return error("missing, symlinked or non-file Oreslang application entrypoint");
   fi
   if role == "infra" | role == "lambdas"; then
-    if action == "check"; then
+    if action == "check" | action == "invoke"; then
+      if role == "infra", action == "invoke"; then
+        return error("infra repositories do not expose Lambda invocation");
+      fi
+      if role == "lambdas", action == "invoke",
+        !entry.starts_with("src/functions/") | !entry.ends_with(".ores"); then
+        return error("lambda invoke entry must be an .ores file below src/functions/");
+      fi
       val String candidate = role == "infra" ?
         root + "/.oreslang-stack-infra.candidate.toml" :
         root + "/.oreslang-stack-lambdas.candidate.toml";
@@ -597,9 +604,12 @@ fnc admission(String root, String entry, String action): String {
       if !fs.exists(marker) | fs.is_dir(marker); then
         return error("missing, symlinked or non-file candidate Oreslang source");
       fi
+      if action == "invoke"; then
+        return "ORESLANG_STACK_ACTION_v1:invoke";
+      fi
       return "ORESLANG_STACK_ACTION_v1:check";
     fi
-    return error("infra/lambdas only support init and compile check; deployment and runtime adapters are not certified");
+    return error("infra/lambdas only support init, compile check, and local Lambda invoke where admitted; deployment adapters are not certified");
   fi
   if action == "routes"; then
     // Source inventory is intentionally independent of previously generated
@@ -620,6 +630,11 @@ fnc admission(String root, String entry, String action): String {
     val String result = generate(root, role, "all", true);
     if is_error(result); then return result; fi
     return "ORESLANG_STACK_ACTION_v1:check";
+  fi
+  if action == "invoke"; then
+    val String result = generate(root, role, "all", true);
+    if is_error(result); then return result; fi
+    return "ORESLANG_STACK_ACTION_v1:invoke";
   fi
   if action == "dev" | action == "build"; then
     val String result = generate(root, role, "all", false);
