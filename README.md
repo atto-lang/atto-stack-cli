@@ -118,10 +118,17 @@ concurrently.
 
 ## Backend and host roadmap
 
-Backend compilation and execution hosting are separate choices. Graal currently
-has the only admitted CLI execution path; planned routes include LLVM/native on
-Scintilla, LLVM/WASM or direct WASM on wasm-xprs/lunatic-lorry, .NET NativeAOT
-workers on Scintilla, and JavaScript on iso-lattes.
+Backend compilation and execution hosting are separate choices. The only
+admitted executable pair is currently `graal + local`. `--backend` and
+`--host` are both parsed through `flags-2-env`; known future pairings receive
+specific fail-closed diagnostics rather than being treated as executable.
+
+Planned routes include Graal on graal-show, LLVM/native on Scintilla or
+LiteGraph, LLVM/WASM or direct WASM on wasm-xprs/lunatic-lorry, .NET NativeAOT
+workers on Scintilla, and JavaScript on iso-lattes. The .NET route is pinned to
+the candidate ORW1 worker protocol, but Scintilla still needs an explicit ORW1
+adapter and the .NET guest ABI is still `main() -> i64`, not Lambda
+`String -> String`.
 
 See [`docs/BACKENDS.md`](docs/BACKENDS.md). These remain prospective until
 their exact backend artifact and host execution receipts are admitted.
