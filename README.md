@@ -116,6 +116,16 @@ physical parent path before execution. Neither this check nor the native
 generator provides race-free isolation from a malicious process changing files
 concurrently.
 
+## Backend and host roadmap
+
+Backend compilation and execution hosting are separate choices. Graal currently
+has the only admitted CLI execution path; planned routes include LLVM/native on
+Scintilla, LLVM/WASM or direct WASM on wasm-xprs/lunatic-lorry, .NET NativeAOT
+workers on Scintilla, and JavaScript on iso-lattes.
+
+See [`docs/BACKENDS.md`](docs/BACKENDS.md). These remain prospective until
+their exact backend artifact and host execution receipts are admitted.
+
 ## Dependencies
 
 - A Java/Graal Oreslang executable available as `oreslang` (or
