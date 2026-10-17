@@ -10,6 +10,14 @@ printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/main.ores"
 cat > "$tmp/fake-oreslang" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
+if [[ "${1:-}" == --lambda-invoke=* ]]; then
+  function="${1#--lambda-invoke=}"
+  shift
+  [[ -f "${1:-}" ]] || exit 1
+  payload="$(cat)"
+  printf 'lambda:%s:%s' "$function" "$payload"
+  exit 0
+fi
 if [[ "$1" == "--check" ]]; then
   [[ -f "$2" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
@@ -81,6 +89,7 @@ if [[ "$1" == --allow-env=* ]]; then
       printf 'ORESLANG_STACK_ACTION_v1:%s\n' "$ORESLANG_STACK_COMMAND" ;;
     routes) printf 'ORESLANG_STACK_JSON_v1:{"schema":"oreslang.stack.inventory/v1"}\n' ;;
     generate) printf 'ORESLANG_STACK_ACTION_v1:generated\n' ;;
+    invoke) printf 'ORESLANG_STACK_ACTION_v1:invoke\n' ;;
     deploy) printf 'ERROR: deployment denied\n' ;;
     *) printf 'ERROR: unrecognized\n' ;;
   esac
@@ -190,6 +199,35 @@ for role in infra lambdas; do
   test -s "$tmp/$role-project/.oreslang-stack-$role.candidate.toml"
   test ! -e "$tmp/$role-project/generated/route-manifest.json"
 done
+
+test "$(printf 'ping' | "$repo/bin/oreslang-stack" invoke \
+  --root "$tmp/lambdas-project" \
+  --entry src/functions/hello/handler.ores \
+  --function handler.invoke)" = 'lambda:handler.invoke:ping'
+
+if "$repo/bin/oreslang-stack" invoke \
+    --root "$tmp/lambdas-project" \
+    --entry src/functions/hello/handler.ores \
+    --function 'bad-name!'; then
+  echo 'malformed Lambda function name must fail before runtime launch' >&2
+  exit 1
+fi
+
+if "$repo/bin/oreslang-stack" invoke \
+    --root "$tmp/lambdas-project" \
+    --entry src/main.ores \
+    --function handler.invoke; then
+  echo 'Lambda repository invoke must stay below src/functions/' >&2
+  exit 1
+fi
+
+if "$repo/bin/oreslang-stack" invoke \
+    --root "$tmp/infra-project" \
+    --entry src/infra/config.ores \
+    --function infra_candidate.status; then
+  echo 'infra candidate must never enter the Lambda runtime path' >&2
+  exit 1
+fi
 mkdir -p "$tmp/occupied-candidate"
 printf 'leave-alone\n' > "$tmp/occupied-candidate/.oreslang-stack-lambdas.candidate.toml"
 if "$repo/bin/oreslang-stack" init --role lambdas --root "$tmp/occupied-candidate"; then
