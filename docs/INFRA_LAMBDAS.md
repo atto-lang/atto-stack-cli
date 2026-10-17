@@ -1,6 +1,6 @@
-# Infra and Lambda repository profiles (candidate only)
+# Infra and Lambda repository profiles
 
-The Oreslang Stack CLI has two **non-deployable** repository profiles:
+The Oreslang Stack CLI has two **non-deployable** repository profiles. The Lambda profile now has a provider-neutral **local invocation** path; this is runtime execution, not cloud deployment:
 
 - `oreslang-stack init --role infra --root <empty-existing-dir>`
   creates `oreslang-stack.toml`, `src/main.ores`,
@@ -41,8 +41,23 @@ environment or module path, or provision anything. Integration requires:
 
 ## Lambda responsibilities
 
-The generated `handler.ores` is a **source-only sample** with a
-`String -> String` signature, not an AWS Lambda handler ABI. In particular,
+The generated `handler.ores` uses the first executable provider-neutral
+Oreslang Lambda ABI: a public synchronous `String -> String` function. With
+a Java/Graal runtime containing `--lambda-invoke`, it can be executed locally:
+
+```sh
+printf '%s' 'ping' | oreslang-stack invoke \
+  --root . \
+  --entry src/functions/hello/handler.ores \
+  --function handler.invoke
+```
+
+The host compiler-checks the repository first, then invokes the selected
+public function through the runtime's strict FaaS isolate with no scoped
+host-I/O grants. Event bytes come from stdin; the response is stdout; guest
+logs remain separate from the response channel.
+
+This is **not** an AWS Lambda handler ABI. In particular,
 `provided.al2023` needs a Linux-compatible root `bootstrap` executable;
 the current JVM/Graal Oreslang CLI `build` emits a **source tarball**, not
 that executable, and may not be mislabelled an AWS Lambda zip or OCI image.
@@ -56,12 +71,12 @@ There is no deployment receipt today.
 
 ## Allowed operations
 
-| Role | `init` | `check` | `routes/generate/dev/build/deploy` |
-| --- | --- | --- | --- |
-| `api/admin-api` | scaffold | schema-agnostic source/route check | existing restricted source-only behavior |
-| `web/admin-web` | scaffold | schema-agnostic source/page check | existing restricted source-only behavior |
-| `infra` | candidate scaffold | candidate drift + compiler | **denied** |
-| `lambdas` | candidate scaffold | candidate drift + compiler | **denied** |
+| Role | `init` | `check` | `invoke` | `deploy` |
+| --- | --- | --- | --- | --- |
+| `api/admin-api` | scaffold | source/route + generated drift | local invocation allowed with explicit generated `lambda.ores` entry/function | **denied** |
+| `web/admin-web` | scaffold | source/page + generated drift | local invocation allowed with explicit generated `lambda.ores` entry/function | **denied** |
+| `infra` | candidate scaffold | candidate drift + compiler | **denied** | **denied** |
+| `lambdas` | candidate scaffold | candidate drift + compiler | **allowed locally** for an explicit `src/functions/**/*.ores` entry and public function | **denied** |
 
 This is not a migration mechanism. Existing repos with `src/`, `generated/`,
 `oreslang-stack.toml`, or either candidate manifest are *never overwritten*
