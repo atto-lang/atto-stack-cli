@@ -644,18 +644,75 @@ fnc admission(String root, String entry, String action): String {
   return error("unknown command: " + action);
 }
 
+fnc backend_host_admission(String backend, String host): String {
+  if backend == "graal"; then
+    if host == "local"; then
+      return "ORESLANG_STACK_BACKEND_HOST_v1:graal:local:executable";
+    fi
+    if host == "graal-show"; then
+      return error("backend/host planned but not executable: graal+graal-show");
+    fi
+    return error("unsupported backend/host combination: graal+" + host);
+  fi
+
+  if backend == "llvm"; then
+    if host == "scintilla-run"; then
+      return error("backend/host planned but not executable: llvm-native+scintilla-run");
+    fi
+    if host == "litegraph"; then
+      return error("backend/host planned but not executable: llvm-native+litegraph");
+    fi
+    if host == "wasm-xprs"; then
+      return error("backend/host planned but not executable: llvm-wasm32-wasi+wasm-xprs");
+    fi
+    if host == "lunatic-lorry"; then
+      return error("backend/host planned but not executable: llvm-wasm32-wasi+lunatic-lorry");
+    fi
+    return error("unsupported backend/host combination: llvm+" + host);
+  fi
+
+  if backend == "wasm"; then
+    if host == "wasm-xprs" | host == "lunatic-lorry"; then
+      return error("backend/host future backend not executable: wasm+" + host);
+    fi
+    return error("unsupported backend/host combination: wasm+" + host);
+  fi
+
+  if backend == "dotnet"; then
+    if host == "scintilla-run"; then
+      return error("backend/host planned but not executable: dotnet-nativeaot+scintilla-run; ORW1 adapter pending");
+    fi
+    return error("unsupported backend/host combination: dotnet+" + host);
+  fi
+
+  if backend == "js"; then
+    if host == "iso-lattes"; then
+      return error("backend/host future backend not executable: js+iso-lattes");
+    fi
+    return error("unsupported backend/host combination: js+" + host);
+  fi
+
+  return error("unknown backend: " + backend);
+}
+
 pub routine main(): void {
   val String command = env.get("ORESLANG_STACK_COMMAND").unwrap();
   val String root = env.get("ORESLANG_STACK_ROOT").unwrap();
   val String entry = env.get("ORESLANG_STACK_ENTRY").unwrap();
   val String backend = env.get("ORESLANG_STACK_BACKEND").unwrap();
+  val String host = env.get("ORESLANG_STACK_HOST").unwrap();
 
-  if command == "deploy"; then
-    stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
+  val String backend_host = backend_host_admission(backend, host);
+  if is_error(backend_host); then
+    stdio.println(backend_host);
     return;
   fi
-  if backend != "graal"; then
-    stdio.println(error("LLVM backend is not ready for this CLI"));
+  if backend_host != "ORESLANG_STACK_BACKEND_HOST_v1:graal:local:executable"; then
+    stdio.println(error("backend/host admission internal mismatch"));
+    return;
+  fi
+  if command == "deploy"; then
+    stdio.println(error("deploy denied: host adapter and runtime receipt are not certified"));
     return;
   fi
   if command == "init"; then
