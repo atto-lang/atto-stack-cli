@@ -31,7 +31,14 @@ env = "ORESLANG_STACK_BACKEND"
 aliases = ["backend"]
 type = "string"
 default = "graal"
-help = "graal is implemented for dev and source-bundle build; llvm fails closed."
+help = "Target backend: graal, llvm, wasm, dotnet, or js. Only graal+local executes today."
+
+[flags.host]
+env = "ORESLANG_STACK_HOST"
+aliases = ["host"]
+type = "string"
+default = "local"
+help = "Execution host: local, graal-show, scintilla-run, litegraph, wasm-xprs, lunatic-lorry, or iso-lattes. Planned hosts fail closed until certified."
 
 
 [commands.init]
