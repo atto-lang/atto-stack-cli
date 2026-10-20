@@ -141,3 +141,18 @@ real interpreter and its filesystem permission APIs. See
 A working `deploy` requires a genuine compiled artifact, target/runtime ABI,
 isolation/admission policies and a live deployment receipt. Oreslang LLVM is
 still experimental and is not usable as the CLI runtime. Do not claim deployment certification until executed Java/Graal integration tests, the installed stdlib/runtime dependency, and backend-specific deployment receipts have been verified.
+
+
+## Build profiles
+
+`oreslang-stack build` accepts `--release`, `--strict-aot`, or `--hard-rt`
+as mutually exclusive build-profile selectors. `--freestanding` is orthogonal.
+
+The stack CLI forwards the selected profile to every compiler check and records it in
+`.oreslang-stack-build-profile` inside the source bundle. The current stack build remains
+a **source-only bundle**; recording a profile does not certify a native executable.
+
+Runtime reflection is forbidden by the Oreslang build-profile v1 contract. Strict AOT
+additionally forbids JIT and unresolved dynamic code. Hard RT adds no-GC/no-unbounded-wait
+and bounded/WCET admission requirements. A compiler backend must reject a profile it cannot
+prove rather than silently weakening it.
