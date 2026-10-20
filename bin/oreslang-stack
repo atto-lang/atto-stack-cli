@@ -20,7 +20,7 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
 Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--root DIR]
        oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
-       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal]
+       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal] [--release|--strict-aot|--hard-rt] [--freestanding]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
        oreslang-stack generate [--kind all|rpc|lambda|graphql] [--check] [--root DIR]
@@ -29,7 +29,7 @@ Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--r
 Options are parsed by flags-2-env (.cli-flags.toml).
 init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
 dev: run an Oreslang project once (watch/reload is not implemented).
-build: Oreslang native generators + compiler checks + source-only bundle.
+build: profile-aware compiler checks + source-only bundle (not a native artifact).
 routes: emit manifest from Oreslang-native route discovery.
 generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
 check: validate all generated outputs and check every .ores file with the compiler.
@@ -77,6 +77,20 @@ export ORESLANG_STACK_ENTRY="${ORESLANG_STACK_ENTRY:-src/main.ores}"
 export ORESLANG_STACK_BACKEND="${ORESLANG_STACK_BACKEND:-graal}"
 export ORESLANG_STACK_KIND="${ORESLANG_STACK_KIND:-all}"
 export ORESLANG_STACK_CHECK="${ORESLANG_STACK_CHECK:-false}"
+export ORESLANG_STACK_RELEASE="${ORESLANG_STACK_RELEASE:-false}"
+export ORESLANG_STACK_STRICT_AOT="${ORESLANG_STACK_STRICT_AOT:-false}"
+export ORESLANG_STACK_HARD_RT="${ORESLANG_STACK_HARD_RT:-false}"
+export ORESLANG_STACK_FREESTANDING="${ORESLANG_STACK_FREESTANDING:-false}"
+if [[ "$requested_command" == "build" ]]; then
+  selected_profiles=0
+  [[ "$ORESLANG_STACK_RELEASE" == "true" ]] && selected_profiles=$((selected_profiles + 1))
+  [[ "$ORESLANG_STACK_STRICT_AOT" == "true" ]] && selected_profiles=$((selected_profiles + 1))
+  [[ "$ORESLANG_STACK_HARD_RT" == "true" ]] && selected_profiles=$((selected_profiles + 1))
+  if (( selected_profiles > 1 )); then
+    echo "oreslang-stack: --release, --strict-aot and --hard-rt are mutually exclusive" >&2
+    exit 2
+  fi
+fi
 if [[ "$requested_command" == "init" && "${ORESLANG_STACK_BACKEND:-graal}" != "graal" ]]; then
   echo "oreslang-stack: init requires the supported graal backend" >&2
   exit 2
@@ -183,6 +197,17 @@ fi
 # This is an Oreslang compiler invocation, not a substitute source parser.
 compiler_check_all() {
   local file checked=0 inventory symlinks
+  local -a profile_args=()
+  if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
+    profile_args+=("--release")
+  elif [[ "${ORESLANG_STACK_STRICT_AOT:-false}" == "true" ]]; then
+    profile_args+=("--strict-aot")
+  elif [[ "${ORESLANG_STACK_HARD_RT:-false}" == "true" ]]; then
+    profile_args+=("--hard-rt")
+  fi
+  if [[ "${ORESLANG_STACK_FREESTANDING:-false}" == "true" ]]; then
+    profile_args+=("--freestanding")
+  fi
   if [[ ! -d "$root/src" || -L "$root/src" ]]; then
     echo "oreslang-stack: source tree missing or symlinked" >&2
     return 1
@@ -202,7 +227,7 @@ compiler_check_all() {
     return 1
   fi
   while IFS= read -r -d '' file; do
-    if ! "$oreslang_bin" --check "$file"; then
+    if ! "$oreslang_bin" "${profile_args[@]}" --check "$file"; then
       rm -f "$inventory"
       echo "oreslang-stack: compiler rejected $file" >&2
       return 1
@@ -348,6 +373,11 @@ case "$action" in
     rm -f "$file_list"
     cp "$root/oreslang-stack.toml" "$stage/oreslang-stack.toml"
     printf '%s\n' "$entry" > "$stage/.oreslang-stack-entry"
+    build_profile="dev"
+    [[ "$ORESLANG_STACK_RELEASE" == "true" ]] && build_profile="release"
+    [[ "$ORESLANG_STACK_STRICT_AOT" == "true" ]] && build_profile="strict-aot"
+    [[ "$ORESLANG_STACK_HARD_RT" == "true" ]] && build_profile="hard-rt"
+    printf 'profile=%s\nfreestanding=%s\nruntime_reflection=forbidden\n'       "$build_profile" "$ORESLANG_STACK_FREESTANDING" > "$stage/.oreslang-stack-build-profile"
     cp "$root/generated/route-manifest.json" "$stage/generated/route-manifest.json"
     cp "$cli_home/bin/oreslang-stack-run" "$stage/bin/oreslang-stack-run"
     # Project-local compiler configuration can contain tokens and private
@@ -357,7 +387,7 @@ case "$action" in
     mv -f -- "$tmp" "$artifact"
     trap - EXIT
     printf 'Oreslang checked source bundle: %s\n' "$artifact"
-    printf '%s\n' 'This is NOT a compiled native artifact. Unpack and use bin/oreslang-stack-run with a Java/Graal Oreslang runtime.'
+    printf '%s\n' 'This is NOT a compiled native artifact. The recorded build profile is an admission requirement for downstream compilation; it is not proof that a native artifact exists.'
     ;;
   *)
     echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
