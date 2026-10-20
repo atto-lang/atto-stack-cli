@@ -10,8 +10,16 @@ printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/main.ores"
 cat > "$tmp/fake-oreslang" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
-if [[ "$1" == "--check" ]]; then
-  [[ -f "$2" ]] || exit 1
+compiler_check=false
+for option in "$@"; do
+  [[ "$option" == "--check" ]] && compiler_check=true
+  if [[ -n "${MOCK_COMPILER_ARGS_FILE:-}" ]]; then
+    printf '%s\n' "$option" >> "$MOCK_COMPILER_ARGS_FILE"
+  fi
+done
+if [[ "$compiler_check" == true ]]; then
+  source_path="${!#}"
+  [[ -f "$source_path" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
   exit 0
 fi
@@ -114,6 +122,40 @@ env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
+tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-build-profile'
+# Build profiles are forwarded exactly and recorded in the source-bundle receipt.
+for profile in release strict-aot hard-rt; do
+  : > "$tmp/profile-args"
+  MOCK_COMPILER_ARGS_FILE="$tmp/profile-args" "$repo/bin/oreslang-stack" build "--$profile" --root "$tmp/project" >/dev/null
+  grep -Fx -- "--$profile" "$tmp/profile-args"
+  tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-build-profile | grep -Fx "profile=$profile"
+  tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-build-profile | grep -Fx 'freestanding=false'
+done
+: > "$tmp/profile-args"
+MOCK_COMPILER_ARGS_FILE="$tmp/profile-args" "$repo/bin/oreslang-stack" build --strict-aot --freestanding --root "$tmp/project" >/dev/null
+grep -Fx -- '--strict-aot' "$tmp/profile-args"
+grep -Fx -- '--freestanding' "$tmp/profile-args"
+tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-build-profile | grep -Fx 'profile=strict-aot'
+tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-build-profile | grep -Fx 'freestanding=true'
+for conflict in '--release --strict-aot' '--release --hard-rt' '--strict-aot --hard-rt'; do
+  read -r first second <<< "$conflict"
+  if "$repo/bin/oreslang-stack" build "$first" "$second" --root "$tmp/project"; then
+    echo "build profile selectors must be mutually exclusive: $conflict" >&2
+    exit 1
+  fi
+done
+# Ambient profile variables must not leak into non-build compiler checks.
+: > "$tmp/profile-args"
+env ORESLANG_STACK_HARD_RT=true ORESLANG_STACK_FREESTANDING=true MOCK_COMPILER_ARGS_FILE="$tmp/profile-args" \
+  "$repo/bin/oreslang-stack" check --root "$tmp/project" >/dev/null
+if grep -Fx -- '--hard-rt' "$tmp/profile-args" || grep -Fx -- '--freestanding' "$tmp/profile-args"; then
+  echo "ambient build profile leaked into non-build command" >&2
+  exit 1
+fi
+if "$repo/bin/oreslang-stack" check --hard-rt --root "$tmp/project"; then
+  echo "build-only profile flag must be rejected on check" >&2
+  exit 1
+fi
 printf 'do-not-include\n' > "$tmp/project/src/.env"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" >/dev/null
 if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.env'; then

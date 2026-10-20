@@ -76,7 +76,35 @@ help = "Run the Oreslang application once with the Java/Graal runtime."
 
 [commands.build]
 env = "ORESLANG_STACK_COMMAND_BUILD"
-help = "Type-check the entrypoint, then produce a source-only bundle."
+help = "Type-check all sources under an explicit build profile, then produce a source-only bundle."
+
+[commands.build.flags.release]
+env = "ORESLANG_STACK_RELEASE"
+aliases = ["release"]
+type = "bool"
+default = "false"
+help = "Require release semantics: semantic tree shaking plus runtime/metadata pruning."
+
+[commands.build.flags.strict_aot]
+env = "ORESLANG_STACK_STRICT_AOT"
+aliases = ["strict-aot"]
+type = "bool"
+default = "false"
+help = "Require closed-world full AOT with no JIT, runtime reflection, or unresolved dynamic code."
+
+[commands.build.flags.hard_rt]
+env = "ORESLANG_STACK_HARD_RT"
+aliases = ["hard-rt"]
+type = "bool"
+default = "false"
+help = "Require hard-real-time admission; implies strict AOT and bounded/WCET evidence."
+
+[commands.build.flags.freestanding]
+env = "ORESLANG_STACK_FREESTANDING"
+aliases = ["freestanding"]
+type = "bool"
+default = "false"
+help = "Forbid hosted stdlib roots and implicit OS/libc target providers."
 
 [commands.deploy]
 env = "ORESLANG_STACK_COMMAND_DEPLOY"
