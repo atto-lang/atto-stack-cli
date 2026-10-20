@@ -55,7 +55,10 @@ if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" 
   echo "oreslang-stack: invalid flags-2-env arguments" >&2
   exit 2
 fi
-# Build-profile flags are command-scoped. Clear ambient values before applying\n# parser output so inherited environment cannot silently strengthen/weaken other commands.\nunset ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING\neval "$exports"
+# Build-profile flags are command-scoped. Clear ambient values before applying
+# parser output so inherited environment cannot silently strengthen/weaken other commands.
+unset ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING
+eval "$exports"
 if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
   echo "oreslang-stack: flags2env command does not match requested command" >&2
   exit 2
