@@ -18,7 +18,7 @@ Do **not** substitute the other CLI, its config/manifest, binary, tests, or depl
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
 RPC/Lambda source generation live in [`src/main.ores`](src/main.ores).
-There is no Rust executable and no Cargo dependency.
+There is no Rust CLI executable and no root/runtime Cargo dependency; repository validation tooling under `tools/` is written in Rust.
 
 `bin/oreslang-stack` is a narrow POSIX host/bootstrap bridge for
 [`flags-2-env`](https://github.com/flags-2-env/flags-2-env),
@@ -156,3 +156,7 @@ Runtime reflection is forbidden by the Oreslang build-profile v1 contract. Stric
 additionally forbids JIT and unresolved dynamic code. Hard RT adds no-GC/no-unbounded-wait
 and bounded/WCET admission requirements. A compiler backend must reject a profile it cannot
 prove rather than silently weakening it.
+
+## Engineering policy: no Python
+
+Python is prohibited in this repository and throughout the `ores-truffle-oreslang` organization for scripts, tests, CI helpers, generators, analyzers, automation, and host tooling. Existing Python functionality must be migrated to **Rust** without weakening behavior or test coverage. The `oreslang-stack` CLI itself remains Oreslang source; Rust is used for repository validation tooling, not as a replacement CLI implementation.
