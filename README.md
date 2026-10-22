@@ -18,7 +18,7 @@ Do **not** substitute the other CLI, its config/manifest, binary, tests, or depl
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
 RPC/Lambda source generation live in [`src/main.ores`](src/main.ores).
-There is no Rust executable and no Cargo dependency.
+There is no Rust CLI executable and no root/runtime Cargo dependency; repository validation tooling under `tools/` is written in Rust.
 
 `bin/oreslang-stack` is a narrow POSIX host/bootstrap bridge for
 [`flags-2-env`](https://github.com/flags-2-env/flags-2-env),
@@ -157,6 +157,6 @@ additionally forbids JIT and unresolved dynamic code. Hard RT adds no-GC/no-unbo
 and bounded/WCET admission requirements. A compiler backend must reject a profile it cannot
 prove rather than silently weakening it.
 
-## No-Python policy
+## Development policy: no Python
 
-Python source, scripts, tests, notebooks, package manifests, runtime dependencies, and CI tooling are not permitted in this repository. Host-side tooling must be implemented in Rust, preserving equivalent behavior and test coverage during migration. Documentation may mention Python only to describe this policy or historical migration work.
+Python is prohibited in this repository for source code, tests, build tooling, code generation, CI, and automation. Existing Python tooling must be replaced with behavior-equivalent Rust rather than deleted without preserving its contract and coverage. Do not add Python source/notebooks, Python package manifests, `python`/`python3`, `pip`, `pytest`, `poetry`, `uv`, or Python setup actions. Rust tooling must pass `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test`.
