@@ -156,3 +156,7 @@ Runtime reflection is forbidden by the Oreslang build-profile v1 contract. Stric
 additionally forbids JIT and unresolved dynamic code. Hard RT adds no-GC/no-unbounded-wait
 and bounded/WCET admission requirements. A compiler backend must reject a profile it cannot
 prove rather than silently weakening it.
+
+## Development policy: no Python
+
+Python is prohibited in this repository for source code, tests, build tooling, code generation, CI, and automation. Existing Python tooling must be replaced with behavior-equivalent Rust rather than deleted without preserving its contract and coverage. Do not add Python source/notebooks, Python package manifests, `python`/`python3`, `pip`, `pytest`, `poetry`, `uv`, or Python setup actions. Rust tooling must pass `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test`.

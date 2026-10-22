@@ -16,8 +16,18 @@ jobs:
       - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           persist-credentials: false
+      - uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: 1.88.0
+          components: rustfmt, clippy
+      - name: Format Rust project-identity checker
+        run: cargo fmt --manifest-path tools/project-identity-check/Cargo.toml -- --check
+      - name: Lint Rust project-identity checker
+        run: cargo clippy --manifest-path tools/project-identity-check/Cargo.toml --all-targets -- -D warnings
+      - name: Test Rust project-identity checker
+        run: cargo test --manifest-path tools/project-identity-check/Cargo.toml
       - name: Check Oreslang Stack project identity documentation
-        run: python3 tests/check-project-identity.py
+        run: cargo run --quiet --manifest-path tools/project-identity-check/Cargo.toml
       - name: Build canonical flags-2-env parser
         run: |
           set -euo pipefail
