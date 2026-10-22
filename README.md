@@ -18,7 +18,7 @@ Do **not** substitute the other CLI, its config/manifest, binary, tests, or depl
 **The CLI implementation is Oreslang source.** The command dispatcher,
 recursive file-route discovery, role validation, route JSON inventory, and
 RPC/Lambda source generation live in [`src/main.ores`](src/main.ores).
-There is no Rust executable and no Cargo dependency.
+There is no Rust CLI executable and no root/runtime Cargo dependency; repository validation tooling under `tools/` is written in Rust.
 
 `bin/oreslang-stack` is a narrow POSIX host/bootstrap bridge for
 [`flags-2-env`](https://github.com/flags-2-env/flags-2-env),
