@@ -123,6 +123,21 @@ tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslan
 "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/project" | grep -F 'generated'
 "$repo/bin/oreslang-stack" generate --kind all --check --root "$tmp/project" | grep -F 'generated'
 env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
+# Every parser-derived control input is CLI-scoped. A hostile parent shell must
+# not redirect roots, entrypoints, backends, generation mode, check mode, or role.
+env \
+  ORESLANG_STACK_ROOT="$tmp/does-not-exist" \
+  ORESLANG_STACK_ENTRY="../escape.ores" \
+  ORESLANG_STACK_BACKEND=llvm \
+  ORESLANG_STACK_KIND=lambda \
+  ORESLANG_STACK_CHECK=true \
+  ORESLANG_STACK_ROLE=infra \
+  ORESLANG_STACK_RELEASE=true \
+  ORESLANG_STACK_STRICT_AOT=true \
+  ORESLANG_STACK_HARD_RT=true \
+  ORESLANG_STACK_FREESTANDING=true \
+  ORESLANG_STACK_FORMAT_CHECK=true \
+  "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
 # The stack integration must exercise the public subcommand spelling rather
 # than silently depending on the legacy --check flag.
