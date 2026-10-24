@@ -11,6 +11,7 @@ cat > "$tmp/fake-oreslang" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 compiler_check=false
+[[ "${1:-}" == "check" ]] && compiler_check=true
 for option in "$@"; do
   [[ "$option" == "--check" ]] && compiler_check=true
   if [[ -n "${MOCK_COMPILER_ARGS_FILE:-}" ]]; then
@@ -18,6 +19,9 @@ for option in "$@"; do
   fi
 done
 if [[ "$compiler_check" == true ]]; then
+  if [[ -n "${MOCK_COMPILER_SPELLING_FILE:-}" ]]; then
+    printf '%s\n' "${1:-}" >> "$MOCK_COMPILER_SPELLING_FILE"
+  fi
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
@@ -120,6 +124,16 @@ tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslan
 "$repo/bin/oreslang-stack" generate --kind all --check --root "$tmp/project" | grep -F 'generated'
 env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
+# The stack integration must exercise the public subcommand spelling rather
+# than silently depending on the legacy --check flag.
+: > "$tmp/compiler-spelling"
+MOCK_COMPILER_SPELLING_FILE="$tmp/compiler-spelling" \
+  "$repo/bin/oreslang-stack" check --root "$tmp/project" >/dev/null
+test -s "$tmp/compiler-spelling"
+if grep -Fvx 'check' "$tmp/compiler-spelling"; then
+  echo "stack compiler admission must use oreslang check" >&2
+  exit 1
+fi
 # This is a *mock dispatch* contract, not compiler or formatter execution.
 cat > "$tmp/fake-oresfmt" <<'FMT'
 #!/usr/bin/env bash
@@ -158,17 +172,32 @@ MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
   ORESLANG_STACK_FORMAT_CHECK=true \
   "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
 # Build performs compiler checking before style checking and must refuse to
-# create an artifact if opted-in canonical formatting is rejected.
+# create an artifact if either admission stage rejects.
 rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+: > "$tmp/format-invocations"
+if MOCK_COMPILER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+   "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project"; then
+  echo "build bundle must be refused after compiler rejection" >&2
+  exit 1
+fi
+test ! -s "$tmp/format-invocations"
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
 if MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
    "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project"; then
   echo "build bundle must be refused after formatter rejection" >&2
   exit 1
 fi
 test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
-ORESFMT_BIN="$tmp/fake-oresfmt" \
+: > "$tmp/compiler-spelling"
+ORESFMT_BIN="$tmp/fake-oresfmt" MOCK_COMPILER_SPELLING_FILE="$tmp/compiler-spelling" \
   "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project" >/dev/null
 test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"
+test -s "$tmp/compiler-spelling"
+if grep -Fvx 'check' "$tmp/compiler-spelling"; then
+  echo "build compiler admission must use oreslang check" >&2
+  exit 1
+fi
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-build-profile'
