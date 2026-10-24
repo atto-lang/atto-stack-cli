@@ -50,7 +50,7 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 | `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
-| `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source; optional `--format-check` also requires read-only `oresfmt --check` |
+| `check` | Native generation drift check followed by real `oreslang check` on each `.ores` source; optional `--format-check` also requires read-only `oresfmt --check` |
 | `build` | Generation, compiler checks, a source distribution containing a runnable `bin/oreslang-stack-run` (requires installed Oreslang); **not a compiled native/JVM/WASM executable** |
 | `deploy` | Explicit **hard failure** until a backend-specific certified deploy adapter exists |
 
@@ -164,9 +164,11 @@ Python is prohibited in this repository for source code, tests, build tooling, c
 
 ## Compiler and formatter together
 
-`oreslang-stack check` is **always a real compiler validation**: Java/GraalVM
-`--check` checks syntax, linked imports and other admitted semantics without
-executing the application. A formatter cannot replace this step.
+`oreslang-stack check` is **always a real compiler validation**: it invokes
+Java/GraalVM `oreslang check` for syntax, linked imports and other admitted
+semantics without executing the application. Legacy `--check` is only an alias;
+the stack integration exercises the public subcommand. A formatter cannot
+replace this step.
 
 For a read-only **combined syntax + canonical style gate**, install the
 `oresfmt` binary from `oreslang-format`, then run:
