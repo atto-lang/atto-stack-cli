@@ -120,6 +120,55 @@ tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslan
 "$repo/bin/oreslang-stack" generate --kind all --check --root "$tmp/project" | grep -F 'generated'
 env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
+# This is a *mock dispatch* contract, not compiler or formatter execution.
+cat > "$tmp/fake-oresfmt" <<'FMT'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -eq 2 && "$1" == "--check" && -d "$2" ]] || exit 74
+if [[ -n "${MOCK_FORMATTER_LOG:-}" ]]; then printf '%s\n' "$2" >> "$MOCK_FORMATTER_LOG"; fi
+[[ "${MOCK_FORMATTER_REJECT:-false}" != "true" ]] || exit 1
+FMT
+chmod +x "$tmp/fake-oresfmt"
+: > "$tmp/format-invocations"
+ORESFMT_BIN="$tmp/fake-oresfmt" MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+  "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project" | grep -F 'verified'
+grep -Fx "$tmp/project/src" "$tmp/format-invocations"
+# Compiler rejection must precede the optional formatter; don't mislabel a
+# compiler failure as a successful format pass.
+: > "$tmp/format-invocations"
+if MOCK_COMPILER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "syntax rejection must fail even when the formatter would accept" >&2
+  exit 1
+fi
+test ! -s "$tmp/format-invocations"
+if MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "noncanonical source must fail opted-in check" >&2
+  exit 1
+fi
+if ORESFMT_BIN="$tmp/missing-oresfmt" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "missing formatter must fail closed" >&2
+  exit 1
+fi
+# An inherited format gate must not silently affect a command lacking the flag.
+MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+  ORESLANG_STACK_FORMAT_CHECK=true \
+  "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
+# Build performs compiler checking before style checking and must refuse to
+# create an artifact if opted-in canonical formatting is rejected.
+rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+if MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project"; then
+  echo "build bundle must be refused after formatter rejection" >&2
+  exit 1
+fi
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
+ORESFMT_BIN="$tmp/fake-oresfmt" \
+  "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project" >/dev/null
+test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-build-profile'
