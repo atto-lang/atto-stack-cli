@@ -20,11 +20,11 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
 Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--root DIR]
        oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
-       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal] [--release|--strict-aot|--hard-rt] [--freestanding]
+       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal] [--release|--strict-aot|--hard-rt] [--freestanding] [--format-check]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
        oreslang-stack generate [--kind all|rpc|lambda|graphql] [--check] [--root DIR]
-       oreslang-stack check [--root DIR]
+       oreslang-stack check [--root DIR] [--format-check]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
 init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
@@ -32,7 +32,7 @@ dev: run an Oreslang project once (watch/reload is not implemented).
 build: profile-aware compiler checks + source-only bundle (not a native artifact).
 routes: emit manifest from Oreslang-native route discovery.
 generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
-check: validate all generated outputs and check every .ores file with the compiler.
+check: validate generated outputs, check every .ores file with the compiler; --format-check also runs oresfmt --check.
 deploy: always denied until a certified host adapter exists.
 EOF
   exit 0
@@ -57,7 +57,7 @@ if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" 
 fi
 # Build-profile flags are command-scoped. Clear ambient values before applying
 # parser output so inherited environment cannot silently strengthen/weaken other commands.
-unset ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING
+unset ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING ORESLANG_STACK_FORMAT_CHECK
 eval "$exports"
 if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
   echo "oreslang-stack: flags2env command does not match requested command" >&2
@@ -84,6 +84,7 @@ export ORESLANG_STACK_RELEASE="${ORESLANG_STACK_RELEASE:-false}"
 export ORESLANG_STACK_STRICT_AOT="${ORESLANG_STACK_STRICT_AOT:-false}"
 export ORESLANG_STACK_HARD_RT="${ORESLANG_STACK_HARD_RT:-false}"
 export ORESLANG_STACK_FREESTANDING="${ORESLANG_STACK_FREESTANDING:-false}"
+export ORESLANG_STACK_FORMAT_CHECK="${ORESLANG_STACK_FORMAT_CHECK:-false}"
 if [[ "$requested_command" == "build" ]]; then
   selected_profiles=0
   [[ "$ORESLANG_STACK_RELEASE" == "true" ]] && selected_profiles=$((selected_profiles + 1))
@@ -244,6 +245,22 @@ compiler_check_all() {
   fi
 }
 
+# Optional style admission is deliberately separate from syntax validation:
+# only a real compiler can establish parsing, imports and typed admission.
+# Never rewrite user or generated sources during check/build.
+formatter_check_all() {
+  [[ "${ORESLANG_STACK_FORMAT_CHECK:-false}" == "true" ]] || return 0
+  local formatter="${ORESFMT_BIN:-oresfmt}"
+  if ! command -v "$formatter" >/dev/null 2>&1; then
+    echo "oreslang-stack: --format-check requires oresfmt (set ORESFMT_BIN)" >&2
+    return 127
+  fi
+  if ! "$formatter" --check "$root/src"; then
+    echo "oreslang-stack: canonical formatter check failed" >&2
+    return 1
+  fi
+}
+
 # Confirm the scaffold is complete, independent of the guest's success receipt.
 verify_initialized_project() {
   local marker candidate
@@ -310,6 +327,7 @@ case "$action" in
   ORESLANG_STACK_ACTION_v1:check)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
     compiler_check_all
+    formatter_check_all
     printf '%s\n' "all generated adapters and Oreslang sources verified"
     ;;
   ORESLANG_STACK_ACTION_v1:dev)
@@ -323,6 +341,10 @@ case "$action" in
     [[ "$requested_command" == "build" ]] || exit 1
     if ! compiler_check_all; then
       echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
+      exit 1
+    fi
+    if ! formatter_check_all; then
+      echo "oreslang-stack: formatter check failed; refusing to create a bundle" >&2
       exit 1
     fi
     # Current compiler --build-analysis is NOT a machine-code artifact.
