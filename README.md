@@ -129,7 +129,18 @@ The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser
 bash tests/bootstrap-contract.sh
 # Only after installing a real Oreslang runtime with PR #496:
 bash tests/native-generator-contract.sh
+
+# Cross-toolchain release gate: requires reviewed real binaries.
+ORESLANG_BIN=/path/to/oreslang \
+ORESFMT_BIN=/path/to/oresfmt \
+  bash tests/real-toolchain-format-contract.sh
 ```
+
+The real-toolchain contract checks compact-but-valid syntax before formatting,
+byte-idempotent formatting, compiler rejection after formatting malformed input,
+compiler-before-formatter build ordering, no source rewrite during check/build,
+style-only build refusal, and a successful canonical `build --format-check`.
+It intentionally refuses to substitute mocks for either `oreslang` or `oresfmt`.
 
 Tests using a mock Oreslang command only prove host bootstrap behavior,
 **not native language compilation**. Full native generator tests require the
