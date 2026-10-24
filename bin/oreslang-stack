@@ -231,7 +231,7 @@ compiler_check_all() {
     return 1
   fi
   while IFS= read -r -d '' file; do
-    if ! "$oreslang_bin" "${profile_args[@]}" --check "$file"; then
+    # Exercise the canonical public compiler spelling; the launcher maps\n    # `check` to the same linked admission path as legacy `--check`.\n    if ! "$oreslang_bin" check "${profile_args[@]}" "$file"; then
       rm -f "$inventory"
       echo "oreslang-stack: compiler rejected $file" >&2
       return 1
