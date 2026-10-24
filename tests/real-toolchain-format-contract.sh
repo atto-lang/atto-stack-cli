@@ -8,6 +8,7 @@ repo="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd -P)"
 oreslang_bin="${ORESLANG_BIN:-oreslang}"
 oresfmt_bin="${ORESFMT_BIN:-oresfmt}"
 stack_bin="${ORESLANG_STACK_BIN:-$repo/bin/oreslang-stack}"
+flags2env_bin="${FLAGS2ENV_BIN:-flags2env}"
 
 require_executable() {
   local value="$1" label="$2"
@@ -22,6 +23,8 @@ require_executable() {
 require_executable "$oreslang_bin" "ORESLANG_BIN"
 require_executable "$oresfmt_bin" "ORESFMT_BIN"
 require_executable "$stack_bin" "ORESLANG_STACK_BIN"
+require_executable "$flags2env_bin" "FLAGS2ENV_BIN"
+export FLAGS2ENV_BIN="$flags2env_bin"
 
 tmp="$(mktemp -d)"
 trap 'rm -rf "$tmp"' EXIT
