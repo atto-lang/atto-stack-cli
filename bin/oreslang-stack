@@ -374,6 +374,19 @@ case "$action" in
       echo "oreslang-stack: symlink inside src refused" >&2
       exit 1
     fi
+    hardlinked_source="$(find "$root/src" -type f -links +1 -print -quit)"
+    if [[ -n "$hardlinked_source" ]]; then
+      echo "oreslang-stack: hardlinked source file refused: $hardlinked_source" >&2
+      exit 1
+    fi
+    if [[ ! -f "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ]]; then
+      echo "oreslang-stack: project manifest missing or unsafe" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/oreslang-stack.toml" -type f -links +1 -print -quit)" ]]; then
+      echo "oreslang-stack: hardlinked project manifest refused" >&2
+      exit 1
+    fi
     if [[ -e "$root/dist" && ( ! -d "$root/dist" || -L "$root/dist" ) ]]; then
       echo "oreslang-stack: unsafe dist path" >&2
       exit 1
@@ -395,6 +408,10 @@ case "$action" in
     # runner are packaged. Secrets and .env files are intentionally excluded.
     if [[ ! -s "$root/generated/route-manifest.json" || -L "$root/generated/route-manifest.json" ]]; then
       echo "oreslang-stack: generated route manifest missing or symlinked" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/generated/route-manifest.json" -type f -links +1 -print -quit)" ]]; then
+      echo "oreslang-stack: hardlinked route manifest refused" >&2
       exit 1
     fi
     stage="$(mktemp -d "$root/dist/.oreslang-stage.XXXXXXXX")"
