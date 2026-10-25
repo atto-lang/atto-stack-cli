@@ -255,6 +255,19 @@ if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.env'; t
   echo "bundle must not contain .env secrets" >&2
   exit 1
 fi
+
+# A regular-file hardlink can point outside the project while bypassing the
+# symlink guard. In particular, .graphql is bundled but not compiler-checked,
+# so reject multiply-linked bundle inputs before copying any source artifact.
+printf 'type Query { secret: String }\n' > "$tmp/outside.graphql"
+ln "$tmp/outside.graphql" "$tmp/project/src/leaked.graphql"
+rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+if "$repo/bin/oreslang-stack" build --root "$tmp/project"; then
+  echo "hardlinked source input must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
+rm "$tmp/project/src/leaked.graphql"
 printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/other.ores"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" --entry src/other.ores >/dev/null
 tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-entry | grep -Fx 'src/other.ores'
