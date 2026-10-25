@@ -196,10 +196,21 @@ if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
+# Never print unbounded compiler output or terminal escape sequences from a
+# potentially malformed source file. Compiler diagnostics are untrusted text.
+# Capture still needs a future native structured diagnostic stream.
+print_bounded_compiler_output() {
+  local stream="$1" limit=4096
+  [[ -s "$stream" ]] || return 0
+  LC_ALL=C head -c "$limit" "$stream" | LC_ALL=C tr -c '\\11\\12\\40-\\176' '?'
+  if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
+    printf '\\n[compiler output truncated at %d bytes]\\n' "$limit" >&2
+  fi
+}
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
 compiler_check_all() {
-  local file relative checked=0 rejected=0 inventory symlinks diagnostics
+  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out
   local -a profile_args=()
   if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
     profile_args+=("--release")
@@ -237,21 +248,31 @@ compiler_check_all() {
     return 1
   fi
   diagnostics="$(mktemp)"
+  diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
     checked=$((checked + 1))
-    if "$oreslang_bin" "${profile_args[@]}" --check "$file" 2>"$diagnostics"; then
-      # Preserve compiler warnings emitted on successful checks.
-      cat "$diagnostics" >&2
+    if "$oreslang_bin" "${profile_args[@]}" --check "$file" >"$diagnostic_out" 2>"$diagnostics"; then
+      # Preserve compiler warnings emitted on successful checks, but never
+      # allow unchecked stdout to impersonate a successful build receipt.
+      print_bounded_compiler_output "$diagnostics" >&2
       continue
     fi
     rejected=$((rejected + 1))
     relative="${file#"$root/"}"
+    # Bash %q escapes control characters in unusual source file names.
+    # Bound the path label even for adversarially long nested paths.
+    if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
     printf 'oreslang-stack: error %d/5: source unit %q (backend: graal)\n' \
       "$rejected" "$relative" >&2
-    cat "$diagnostics" >&2
+    if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
+      echo '  compiler exited nonzero without diagnostic details' >&2
+    else
+      print_bounded_compiler_output "$diagnostics" >&2
+      print_bounded_compiler_output "$diagnostic_out" >&2
+    fi
     if (( rejected >= 5 )); then break; fi
   done < "$inventory"
-  rm -f "$diagnostics" "$inventory"
+  rm -f "$diagnostics" "$diagnostic_out" "$inventory"
   if (( checked == 0 )); then
     echo "oreslang-stack: no .ores files to check" >&2
     return 1
