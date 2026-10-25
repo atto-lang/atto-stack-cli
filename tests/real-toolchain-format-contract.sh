@@ -108,43 +108,7 @@ if ORESFMT_BIN="$tmp/logging-oresfmt" \
   echo "real-toolchain: build accepted compiler-invalid source" >&2
   exit 1
 fi
-grep -F   { echo "real-toolchain: compiler rejection still produced a bundle" >&2; exit 1; }
-diff -ru "$tmp/bad-project-src-before" "$tmp/bad-project/src" >/dev/null ||
-  { echo "real-toolchain: rejected build mutated authored source" >&2; exit 1; }
-
-# A style-only failure must pass compiler admission, fail the format gate, leave
-# authored source unchanged, and produce no bundle.
-make_project "$tmp/style-project"
-printf '%s   \n' 'pub routine helper(): void { return; }' > "$tmp/style-project/src/zz-style.ores"
-"$oreslang_bin" check "$tmp/style-project/src/zz-style.ores"
-cp -R "$tmp/style-project/src" "$tmp/style-project-src-before"
-if ORESLANG_BIN="$oreslang_bin" ORESFMT_BIN="$oresfmt_bin" \
-   "$stack_bin" build --format-check --root "$tmp/style-project"; then
-  echo "real-toolchain: build accepted noncanonical source" >&2
-  exit 1
-fi
-test ! -e "$tmp/style-project/dist/oreslang-stack-source.tar.gz" ||
-  { echo "real-toolchain: format rejection still produced a bundle" >&2; exit 1; }
-diff -ru "$tmp/style-project-src-before" "$tmp/style-project/src" >/dev/null ||
-  { echo "real-toolchain: format-gated build rewrote authored source" >&2; exit 1; }
-
-# Canonicalize the complete source tree explicitly, then require the same real
-# compiler + formatter gate to succeed and package the checked sources.
-"$oresfmt_bin" --write --ok-to-mod-outside-git "$tmp/style-project/src"
-"$oresfmt_bin" --check "$tmp/style-project/src"
-while IFS= read -r -d '' source; do
-  "$oreslang_bin" check "$source"
-done < <(find "$tmp/style-project/src" -type f -name '*.ores' -print0)
-
-ORESLANG_BIN="$oreslang_bin" ORESFMT_BIN="$oresfmt_bin" \
-  "$stack_bin" build --format-check --root "$tmp/style-project" >/dev/null
-artifact="$tmp/style-project/dist/oreslang-stack-source.tar.gz"
-test -s "$artifact" ||
-  { echo "real-toolchain: successful checked build produced no bundle" >&2; exit 1; }
-tar -tzf "$artifact" | grep -F './src/' >/dev/null
-
-echo "real oreslang check -> oresfmt -> check -> idempotence -> build contract passed"
-CALL\tcheck\t' "$oreslang_log" | grep -F '/zz-broken.ores' >/dev/null ||
+grep -F $'CALL\tcheck\t' "$oreslang_log" | grep -F '/zz-broken.ores' >/dev/null ||
   { echo "real-toolchain: malformed project source never reached oreslang check" >&2; exit 1; }
 test ! -s "$fmt_log" ||
   { echo "real-toolchain: formatter ran after compiler rejection" >&2; exit 1; }
