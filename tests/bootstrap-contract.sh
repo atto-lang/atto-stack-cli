@@ -108,10 +108,10 @@ export ORESLANG_BIN="$tmp/fake-oreslang"
 # Diagnostic aggregation must report five independent source units, in stable
 # path order, with compiler detail, and must never package invalid source.
 mkdir -p "$tmp/diagnostic-project/src"
-printf '[repository]\\nrole = "api"\\n' > "$tmp/diagnostic-project/oreslang-stack.toml"
-printf 'pub routine main(): void { return; }\\n' > "$tmp/diagnostic-project/src/main.ores"
+printf '[repository]\nrole = "api"\n' > "$tmp/diagnostic-project/oreslang-stack.toml"
+printf 'pub routine main(): void { return; }\n' > "$tmp/diagnostic-project/src/main.ores"
 for index in 01 02 03 04 05 06; do
-  printf 'define module diagnostics_test as\\nend\\n' > "$tmp/diagnostic-project/src/fault-$index.ores"
+  printf 'define module diagnostics_test as\nend\n' > "$tmp/diagnostic-project/src/fault-$index.ores"
 done
 if MOCK_COMPILER_REJECT_FAULTS=true \
     "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
