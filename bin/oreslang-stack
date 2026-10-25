@@ -200,9 +200,12 @@ fi
 # potentially malformed source file. Compiler diagnostics are untrusted text.
 # Capture still needs a future native structured diagnostic stream.
 print_bounded_compiler_output() {
-  local stream="$1" limit=4096
+  local stream="$1" limit=4096 excerpt
   [[ -s "$stream" ]] || return 0
-  LC_ALL=C head -c "$limit" "$stream" | LC_ALL=C tr -c '\11\12\40-\176' '?'
+  # Redact the project root before printing any compiler-controlled text.
+  excerpt="$(LC_ALL=C head -c "$limit" "$stream")"
+  excerpt="${excerpt//"$root/"/}"
+  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?'
   if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
     printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
   fi
