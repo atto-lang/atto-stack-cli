@@ -202,9 +202,9 @@ fi
 print_bounded_compiler_output() {
   local stream="$1" limit=4096
   [[ -s "$stream" ]] || return 0
-  LC_ALL=C head -c "$limit" "$stream" | LC_ALL=C tr -c '\\11\\12\\40-\\176' '?'
+  LC_ALL=C head -c "$limit" "$stream" | LC_ALL=C tr -c '\11\12\40-\176' '?'
   if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
-    printf '\\n[compiler output truncated at %d bytes]\\n' "$limit" >&2
+    printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
   fi
 }
 # Compile all Oreslang units, not merely the application entrypoint.
