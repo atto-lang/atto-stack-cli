@@ -254,7 +254,11 @@ compiler_check_all() {
   diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
     checked=$((checked + 1))
-    if "$oreslang_bin" "${profile_args[@]}" --check "$file" >"$diagnostic_out" 2>"$diagnostics"; then
+    # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
+    # 1024-byte blocks. The cap is per file and scoped to the compiler only.
+    # A check operation should not materialize large compiled artifacts.
+    if ( ulimit -f 65536 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
+        >"$diagnostic_out" 2>"$diagnostics"; then
       # Preserve compiler warnings emitted on successful checks, but never
       # allow unchecked stdout to impersonate a successful build receipt.
       print_bounded_compiler_output "$diagnostics" >&2
