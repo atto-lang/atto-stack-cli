@@ -43,11 +43,15 @@ build failed: 2 errors (maximum shown: 5); no artifact emitted
 
 The Stack CLI bridge checks all `.ores` files in a deterministic source
 inventory and now presents up to **five failing files**, with project-relative
-unit labels and underlying compiler stderr. This means **one independent
-failure per compiler invocation/file** today, not five separate errors inside
-a malformed file. The Java/Graal companion work improves source-unit and
-module attribution. Actual native frontend diagnostic recovery and LLVM parity
-remain separate work.
+unit labels and bounded compiler diagnostic output from both stderr and stdout.
+Each emitted stream is truncated to 4096 bytes, terminal control characters
+are replaced, the configured project root is removed from displayed diagnostics,
+and the compiler's maximum file output size is capped at 64 MiB per file.
+Compiler stdout cannot forge a successful build receipt. This means **one
+independent failure per compiler invocation/file** today, not five separate
+errors inside a malformed file. The Java/Graal companion work improves typed
+source-unit/module attribution, and LLVM now prints bounded context. Actual
+native frontend diagnostic recovery across phases remains separate work.
 
 ## Required backend qualification
 
