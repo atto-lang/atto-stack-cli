@@ -21,6 +21,10 @@ if [[ "$compiler_check" == true ]]; then
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
+  if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
+    printf 'Oreslang parse error at 2:4: rejected fixture in module diagnostics_test\n' >&2
+    exit 42
+  fi
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
@@ -101,6 +105,31 @@ printf 'app started\n'
 EOS
 chmod +x "$tmp/fake-oreslang"
 export ORESLANG_BIN="$tmp/fake-oreslang"
+# Diagnostic aggregation must report five independent source units, in stable
+# path order, with compiler detail, and must never package invalid source.
+mkdir -p "$tmp/diagnostic-project/src"
+printf '[repository]\\nrole = "api"\\n' > "$tmp/diagnostic-project/oreslang-stack.toml"
+printf 'pub routine main(): void { return; }\\n' > "$tmp/diagnostic-project/src/main.ores"
+for index in 01 02 03 04 05 06; do
+  printf 'define module diagnostics_test as\\nend\\n' > "$tmp/diagnostic-project/src/fault-$index.ores"
+done
+if MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-stdout" 2> "$tmp/diagnostic-stderr"; then
+  echo "multi-unit compiler errors must fail the build" >&2
+  exit 1
+fi
+for index in 01 02 03 04 05; do
+  grep -F "src/fault-$index.ores" "$tmp/diagnostic-stderr" > /dev/null
+  grep -F "error $((10#$index))/5: source unit" "$tmp/diagnostic-stderr" > /dev/null
+done
+if grep -F 'src/fault-06.ores' "$tmp/diagnostic-stderr"; then
+  echo "diagnostic aggregator must stop at five independent failures" >&2
+  exit 1
+fi
+test "$(grep -c 'Oreslang parse error at 2:4:' "$tmp/diagnostic-stderr")" -eq 5
+grep -F '5 failing source unit(s) shown (limit: 5)' "$tmp/diagnostic-stderr" > /dev/null
+test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
 # A receipt for another operation must never elevate a read-only request.
 for forced in dev build; do
   if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \
