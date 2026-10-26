@@ -205,15 +205,16 @@ print_bounded_compiler_output() {
   # Redact the project root before printing any compiler-controlled text.
   excerpt="$(LC_ALL=C head -c "$limit" "$stream")"
   excerpt="${excerpt//"$root/"/}"
-  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?'
+  # Compiler-controlled lines must never impersonate top-level CLI status.
+  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?' | sed 's/^/    | /'
   if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
     printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
   fi
 }
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
-compiler_check_all() {
-  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out
+compiler_check_all() (
+  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out workdir exit_status
   local -a profile_args=()
   if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
     profile_args+=("--release")
@@ -237,21 +238,26 @@ compiler_check_all() {
     echo "oreslang-stack: source tree contains a symlink: $symlinks" >&2
     return 1
   fi
-  inventory="$(mktemp)"
+  # Keep diagnostic files private and clean on every exit path. The function
+  # runs in a subshell so its EXIT trap cannot override build artifact cleanup.
+  if ! workdir="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/oreslang-stack-diag.XXXXXXXX")"; then
+    echo "oreslang-stack: cannot create private diagnostic workspace" >&2
+    return 1
+  fi
+  trap 'rm -rf -- "$workdir"' EXIT
+  inventory="$workdir/inventory"
+  diagnostics="$workdir/stderr"
+  diagnostic_out="$workdir/stdout"
   if ! find "$root/src" -type f -name '*.ores' -print0 > "$inventory"; then
-    rm -f "$inventory"
     echo "oreslang-stack: source inventory failed" >&2
     return 1
   fi
   # A deterministic inventory makes the first five failures reproducible.
   # Sort NUL-separated paths: source filenames may contain spaces or newlines.
   if ! LC_ALL=C sort -z "$inventory" -o "$inventory"; then
-    rm -f "$inventory"
     echo "oreslang-stack: unable to sort source inventory" >&2
     return 1
   fi
-  diagnostics="$(mktemp)"
-  diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
     checked=$((checked + 1))
     # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
@@ -263,14 +269,21 @@ compiler_check_all() {
       # allow unchecked stdout to impersonate a successful build receipt.
       print_bounded_compiler_output "$diagnostics" >&2
       continue
+    else
+      exit_status=$?
     fi
     rejected=$((rejected + 1))
     relative="${file#"$root/"}"
     # Bash %q escapes control characters in unusual source file names.
     # Bound the path label even for adversarially long nested paths.
     if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
-    printf 'oreslang-stack: error %d/5: source unit %q (backend: graal)\n' \
-      "$rejected" "$relative" >&2
+    printf 'oreslang-stack: error %d/5: source unit %q (compiler exit: %d; backend: graal)\n' \
+      "$rejected" "$relative" "$exit_status" >&2
+    # 126/127 are launcher failures; 128+ commonly indicate signal termination.
+    # These must not be classified as confirmed Oreslang source errors.
+    if (( exit_status == 126 || exit_status == 127 || exit_status >= 128 )); then
+      echo '  compiler execution failed; source rejection is NOT established' >&2
+    fi
     if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
       echo '  compiler exited nonzero without diagnostic details' >&2
     else
@@ -279,7 +292,6 @@ compiler_check_all() {
     fi
     if (( rejected >= 5 )); then break; fi
   done < "$inventory"
-  rm -f "$diagnostics" "$diagnostic_out" "$inventory"
   if (( checked == 0 )); then
     echo "oreslang-stack: no .ores files to check" >&2
     return 1
@@ -287,9 +299,12 @@ compiler_check_all() {
   if (( rejected > 0 )); then
     printf 'oreslang-stack: build checks failed: %d failing source unit(s) shown (limit: 5); no bundle will be published\n' \
       "$rejected" >&2
+    if (( rejected >= 5 )); then
+      echo "oreslang-stack: additional errors may exist; remaining units were not checked" >&2
+    fi
     return 1
   fi
-}
+)
 
 # Confirm the scaffold is complete, independent of the guest's success receipt.
 verify_initialized_project() {
