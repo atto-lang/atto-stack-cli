@@ -42,15 +42,15 @@ if [[ "$1" == --allow-env=* ]]; then
   # unsafe or excessive stdout must still fail command admission.
   if [[ "${MOCK_GUEST_OVERSIZED_RECEIPT:-}" == true ]]; then
     printf 'ORESLANG_STACK_ACTION_v1:check'
-    head -c 1100000 /dev/zero | LC_ALL=C tr '\\000' X
+    head -c 1100000 /dev/zero | LC_ALL=C tr '\000' X
     exit 0
   fi
   if [[ "${MOCK_GUEST_NUL_RECEIPT:-}" == true ]]; then
-    printf 'ORESLANG_STACK_ACTION_v1:check\\000'
+    printf 'ORESLANG_STACK_ACTION_v1:check\000'
     exit 0
   fi
   if [[ "${MOCK_GUEST_ESC_RECEIPT:-}" == true ]]; then
-    printf 'ORESLANG_STACK_ACTION_v1:check\\033'
+    printf 'ORESLANG_STACK_ACTION_v1:check\033'
     exit 0
   fi
   if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
