@@ -24,6 +24,10 @@ if [[ "$compiler_check" == true ]]; then
     printf "compiler unavailable\\n" >&2
     exit "$MOCK_COMPILER_EXEC_FAILURE"
   fi
+  if [[ "${MOCK_COMPILER_EXCESSIVE_OUTPUT:-}" == true ]]; then
+    head -c 2000000 /dev/zero | LC_ALL=C tr '\000' X >&2
+    exit 0
+  fi
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
   if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
     if [[ "${MOCK_COMPILER_UNSAFE_OUTPUT:-}" == true ]]; then
@@ -174,6 +178,17 @@ if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
   echo "terminal escape reached CLI diagnostic output" >&2
   exit 1
 fi
+test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# A 2 MiB compiler stream exceeds the per-stream disk limit and must
+# fail closed. A resource-limit signal is not a proven source-language error.
+if MOCK_COMPILER_EXCESSIVE_OUTPUT=true \
+    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
+    > "$tmp/compiler-overflow-stdout" 2> "$tmp/compiler-overflow-stderr"; then
+  echo 'compiler output overflow must never permit artifact publication' >&2
+  exit 1
+fi
+test ! -s "$tmp/compiler-overflow-stdout"
+grep -F 'source rejection is NOT established' "$tmp/compiler-overflow-stderr" >/dev/null
 test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
 # Execution failures must not consume the independent source-error budget.
 for failure_status in 126 127 143; do
