@@ -20,6 +20,10 @@ done
 if [[ "$compiler_check" == true ]]; then
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
+  if [[ -n "${MOCK_COMPILER_EXEC_FAILURE:-}" ]]; then
+    printf "compiler unavailable\\n" >&2
+    exit "$MOCK_COMPILER_EXEC_FAILURE"
+  fi
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
   if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
     if [[ "${MOCK_COMPILER_UNSAFE_OUTPUT:-}" == true ]]; then
@@ -152,6 +156,22 @@ if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
   exit 1
 fi
 test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# Execution failures must not consume the independent source-error budget.
+for failure_status in 126 127 143; do
+  if MOCK_COMPILER_EXEC_FAILURE="$failure_status" \
+      "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+      > "$tmp/compiler-exec-stdout" 2> "$tmp/compiler-exec-stderr"; then
+    echo "compiler execution failure must fail closed: $failure_status" >&2
+    exit 1
+  fi
+  grep -F "compiler execution failed (exit: $failure_status)" "$tmp/compiler-exec-stderr" >/dev/null
+  grep -F 'source rejection is NOT established' "$tmp/compiler-exec-stderr" >/dev/null
+  if grep -F 'failing source unit(s) shown' "$tmp/compiler-exec-stderr"; then
+    echo 'execution failure misclassified as a source diagnostic' >&2
+    exit 1
+  fi
+  test ! -s "$tmp/compiler-exec-stdout"
+done
 # A temporary directory for compiler stderr/stdout must not survive an error.
 mkdir -p "$tmp/diagnostic-private-tmp"
 if TMPDIR="$tmp/diagnostic-private-tmp" MOCK_COMPILER_REJECT_FAULTS=true \
