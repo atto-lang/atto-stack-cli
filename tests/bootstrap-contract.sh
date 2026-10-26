@@ -38,6 +38,21 @@ if [[ "$compiler_check" == true ]]; then
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
+  # The admission receipt is not compiler output. A successful process with
+  # unsafe or excessive stdout must still fail command admission.
+  if [[ "${MOCK_GUEST_OVERSIZED_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check'
+    head -c 1100000 /dev/zero | LC_ALL=C tr '\\000' X
+    exit 0
+  fi
+  if [[ "${MOCK_GUEST_NUL_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check\\000'
+    exit 0
+  fi
+  if [[ "${MOCK_GUEST_ESC_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check\\033'
+    exit 0
+  fi
   if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
     printf 'invoked\n' > "$MOCK_GUEST_INVOCATION_FILE"
   fi
@@ -171,6 +186,23 @@ for failure_status in 126 127 143; do
     exit 1
   fi
   test ! -s "$tmp/compiler-exec-stdout"
+done
+# Invalid guest-admission receipts must fail closed, leave no stdout
+# receipts, and remove private temp workspaces even when the guest succeeded.
+mkdir -p "$tmp/admission-private-tmp"
+for mode in MOCK_GUEST_OVERSIZED_RECEIPT MOCK_GUEST_NUL_RECEIPT MOCK_GUEST_ESC_RECEIPT; do
+  if env TMPDIR="$tmp/admission-private-tmp" "$mode=true" \
+      "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+      > "$tmp/admission-bad-stdout" 2> "$tmp/admission-bad-stderr"; then
+    echo "unsafe or excessive guest admission receipt was accepted: $mode" >&2
+    exit 1
+  fi
+  test ! -s "$tmp/admission-bad-stdout"
+  grep -F 'Oreslang command admission failed' "$tmp/admission-bad-stderr" >/dev/null
+  if [[ -n "$(find "$tmp/admission-private-tmp" -mindepth 1 -print -quit)" ]]; then
+    echo "admission capture workspace leaked: $mode" >&2
+    exit 1
+  fi
 done
 # A temporary directory for compiler stderr/stdout must not survive an error.
 mkdir -p "$tmp/diagnostic-private-tmp"
