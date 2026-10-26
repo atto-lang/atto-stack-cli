@@ -216,7 +216,7 @@ capture_admission_receipt() (
   # Command substitution erases NUL bytes, potentially turning an invalid
   # receipt into a valid one. Also reject terminal escapes and C0 controls,
   # while preserving ordinary JSON whitespace and UTF-8 bytes.
-  filtered="$(LC_ALL=C tr -d '\\000-\\010\\013\\014\\016-\\037\\177' < "$workdir/stdout" | wc -c)"
+  filtered="$(LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' < "$workdir/stdout" | wc -c)"
   if (( filtered != bytes )); then
     echo "oreslang-stack: unsafe control byte in admission receipt" >&2
     return 1
