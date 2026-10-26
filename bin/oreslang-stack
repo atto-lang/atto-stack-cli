@@ -490,7 +490,9 @@ case "$action" in
     printf '%s\n' 'This is NOT a compiled native artifact. The recorded build profile is an admission requirement for downstream compilation; it is not proof that a native artifact exists.'
     ;;
   *)
-    echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
+    # Never echo an unrecognized guest-controlled receipt as a top-level CLI
+    # message: an arbitrary multiline value could forge error or success logs.
+    echo "oreslang-stack: rejected unrecognized guest action receipt" >&2
     exit 1
     ;;
 esac
