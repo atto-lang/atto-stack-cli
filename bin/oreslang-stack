@@ -272,6 +272,15 @@ compiler_check_all() (
     else
       exit_status=$?
     fi
+    # Tool/launcher failures are infrastructure failures, not independent
+    # source diagnostics. Stop immediately instead of consuming the five-error
+    # budget or continuing with an unusable compiler.
+    if (( exit_status == 126 || exit_status == 127 || exit_status >= 128 )); then
+      echo "oreslang-stack: compiler execution failed (exit: $exit_status); source rejection is NOT established" >&2
+      print_bounded_compiler_output "$diagnostics" >&2
+      print_bounded_compiler_output "$diagnostic_out" >&2
+      return 1
+    fi
     rejected=$((rejected + 1))
     relative="${file#"$root/"}"
     # Bash %q escapes control characters in unusual source file names.
@@ -279,11 +288,6 @@ compiler_check_all() (
     if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
     printf 'oreslang-stack: error %d/5: source unit %q (compiler exit: %d; backend: graal)\n' \
       "$rejected" "$relative" "$exit_status" >&2
-    # 126/127 are launcher failures; 128+ commonly indicate signal termination.
-    # These must not be classified as confirmed Oreslang source errors.
-    if (( exit_status == 126 || exit_status == 127 || exit_status >= 128 )); then
-      echo '  compiler execution failed; source rejection is NOT established' >&2
-    fi
     if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
       echo '  compiler exited nonzero without diagnostic details' >&2
     else
