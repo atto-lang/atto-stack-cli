@@ -291,10 +291,11 @@ compiler_check_all() (
   fi
   while IFS= read -r -d '' file; do
     checked=$((checked + 1))
-    # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
-    # 1024-byte blocks. The cap is per file and scoped to the compiler only.
-    # A check operation should not materialize large compiled artifacts.
-    if ( ulimit -f 65536 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
+    # A malicious or stuck compiler cannot exhaust the build disk with raw
+    # diagnostics. Bash ulimit -f counts 1024-byte blocks. Limit EACH output
+    # stream to 1 MiB; overflow is an execution failure, not a source error.
+    # The human-readable excerpt remains independently capped at 4096 bytes.
+    if ( ulimit -f 1024 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
         >"$diagnostic_out" 2>"$diagnostics"; then
       # Preserve compiler warnings emitted on successful checks, but never
       # allow unchecked stdout to impersonate a successful build receipt.
