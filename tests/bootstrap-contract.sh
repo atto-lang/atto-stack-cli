@@ -152,6 +152,35 @@ if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
   exit 1
 fi
 test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# A temporary directory for compiler stderr/stdout must not survive an error.
+mkdir -p "$tmp/diagnostic-private-tmp"
+if TMPDIR="$tmp/diagnostic-private-tmp" MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-private-stdout" 2> "$tmp/diagnostic-private-stderr"; then
+  echo "diagnostic source rejection must fail" >&2
+  exit 1
+fi
+if [[ -n "$(find "$tmp/diagnostic-private-tmp" -mindepth 1 -print -quit)" ]]; then
+  echo "diagnostic workspace was not cleaned after failure" >&2
+  exit 1
+fi
+grep -F 'compiler exit: 42; backend: graal' "$tmp/diagnostic-private-stderr" >/dev/null
+grep -F 'additional errors may exist' "$tmp/diagnostic-private-stderr" >/dev/null
+# Compiler-controlled lines are indented and cannot impersonate CLI status.
+grep -F '    | FORGED-SUCCESS-RECEIPT' "$tmp/diagnostic-bad-stderr" >/dev/null
+if grep -E '^FORGED-SUCCESS-RECEIPT|^oreslang-stack: build succeeded' \
+    "$tmp/diagnostic-bad-stderr"; then
+  echo "compiler stdout impersonated a top-level CLI receipt" >&2
+  exit 1
+fi
+# An unavailable private temp workspace is an infrastructure failure, never success.
+if TMPDIR="$tmp/nonexistent-private-tmp" MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-tmpfail-stdout" 2> "$tmp/diagnostic-tmpfail-stderr"; then
+  echo "missing diagnostic workspace must fail closed" >&2
+  exit 1
+fi
+grep -F 'cannot create private diagnostic workspace' "$tmp/diagnostic-tmpfail-stderr" >/dev/null
 # A receipt for another operation must never elevate a read-only request.
 for forced in dev build; do
   if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \
