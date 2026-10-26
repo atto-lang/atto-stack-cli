@@ -192,7 +192,38 @@ if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
   fi
 fi
 
-if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
+# The admission guest is untrusted. Do not put arbitrarily large stdout into a
+# shell variable or expose its raw stderr as terminal control sequences. Capture
+# under a private EXIT-cleaned workspace; never use this to certify compiler CI.
+capture_admission_receipt() (
+  umask 077
+  local workdir bytes filtered
+  if ! workdir="$(mktemp -d "${TMPDIR:-/tmp}/oreslang-stack-admission.XXXXXXXX")"; then
+    echo "oreslang-stack: admission capture workspace unavailable" >&2
+    return 1
+  fi
+  trap 'rm -rf -- "$workdir"' EXIT
+  if ! ( ulimit -f 2048 && "$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores" ) \
+      > "$workdir/stdout" 2> "$workdir/stderr"; then
+    echo "oreslang-stack: admission guest failed (captured output withheld)" >&2
+    return 1
+  fi
+  bytes="$(wc -c < "$workdir/stdout")"
+  if (( bytes > 1048576 )); then
+    echo "oreslang-stack: admission receipt exceeds 1 MiB limit" >&2
+    return 1
+  fi
+  # Command substitution erases NUL bytes, potentially turning an invalid
+  # receipt into a valid one. Also reject terminal escapes and C0 controls,
+  # while preserving ordinary JSON whitespace and UTF-8 bytes.
+  filtered="$(LC_ALL=C tr -d '\\000-\\010\\013\\014\\016-\\037\\177' < "$workdir/stdout" | wc -c)"
+  if (( filtered != bytes )); then
+    echo "oreslang-stack: unsafe control byte in admission receipt" >&2
+    return 1
+  fi
+  cat -- "$workdir/stdout"
+)
+if ! action="$(capture_admission_receipt)"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
