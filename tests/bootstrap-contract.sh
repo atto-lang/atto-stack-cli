@@ -53,6 +53,10 @@ if [[ "$1" == --allow-env=* ]]; then
     printf 'ORESLANG_STACK_ACTION_v1:check\033'
     exit 0
   fi
+  if [[ "${MOCK_GUEST_FORGED_UNKNOWN_ACTION:-}" == true ]]; then
+    printf 'FORGED_SUCCESS_FROM_GUEST\\nORESLANG_STACK_ACTION_v1:not-real\\n'
+    exit 0
+  fi
   if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
     printf 'invoked\n' > "$MOCK_GUEST_INVOCATION_FILE"
   fi
@@ -190,7 +194,7 @@ done
 # Invalid guest-admission receipts must fail closed, leave no stdout
 # receipts, and remove private temp workspaces even when the guest succeeded.
 mkdir -p "$tmp/admission-private-tmp"
-for mode in MOCK_GUEST_OVERSIZED_RECEIPT MOCK_GUEST_NUL_RECEIPT MOCK_GUEST_ESC_RECEIPT; do
+for mode in MOCK_GUEST_OVERSIZED_RECEIPT MOCK_GUEST_NUL_RECEIPT MOCK_GUEST_ESC_RECEIPT MOCK_GUEST_FORGED_UNKNOWN_ACTION; do
   if env TMPDIR="$tmp/admission-private-tmp" "$mode=true" \
       "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
       > "$tmp/admission-bad-stdout" 2> "$tmp/admission-bad-stderr"; then
@@ -199,6 +203,10 @@ for mode in MOCK_GUEST_OVERSIZED_RECEIPT MOCK_GUEST_NUL_RECEIPT MOCK_GUEST_ESC_R
   fi
   test ! -s "$tmp/admission-bad-stdout"
   grep -F 'Oreslang command admission failed' "$tmp/admission-bad-stderr" >/dev/null
+  if grep -F 'FORGED_SUCCESS_FROM_GUEST' "$tmp/admission-bad-stderr"; then
+    echo "unrecognized guest action was echoed to top-level diagnostics" >&2
+    exit 1
+  fi
   if [[ -n "$(find "$tmp/admission-private-tmp" -mindepth 1 -print -quit)" ]]; then
     echo "admission capture workspace leaked: $mode" >&2
     exit 1
