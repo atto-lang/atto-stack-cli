@@ -54,7 +54,7 @@ if [[ "$1" == --allow-env=* ]]; then
     exit 0
   fi
   if [[ "${MOCK_GUEST_FORGED_UNKNOWN_ACTION:-}" == true ]]; then
-    printf 'FORGED_SUCCESS_FROM_GUEST\\nORESLANG_STACK_ACTION_v1:not-real\\n'
+    printf 'FORGED_SUCCESS_FROM_GUEST\nORESLANG_STACK_ACTION_v1:not-real\n'
     exit 0
   fi
   if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
