@@ -46,7 +46,7 @@ inventory and now presents up to **five failing files**, with project-relative
 unit labels and bounded compiler diagnostic output from both stderr and stdout.
 Each emitted stream is truncated to 4096 bytes, terminal control characters
 are replaced, the configured project root is removed from displayed diagnostics,
-and the compiler's maximum file output size is capped at 64 MiB per file.
+and each raw compiler output stream is capped at 1 MiB per checked source unit; exceeding the cap is treated as a compiler execution failure, never a confirmed language error.
 Compiler stdout cannot forge a successful build receipt. Diagnostic lines are
 indented as untrusted compiler text, include compiler exit status, and are held
 in a private temporary workspace removed when the check subprocess exits,
