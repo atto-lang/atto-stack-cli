@@ -1,0 +1,4 @@
+source-bundle	java	execution
+compiler-profile	java	execution
+deploy-gate	java	execution
+negative-admission	java	rejection
