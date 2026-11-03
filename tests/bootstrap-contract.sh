@@ -21,6 +21,16 @@ if [[ "$compiler_check" == true ]]; then
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
+  if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
+    if [[ "${MOCK_COMPILER_UNSAFE_OUTPUT:-}" == true ]]; then
+      printf '\033[31mBAD-ESCAPE\033[0m\n' >&2
+      printf 'FORGED-SUCCESS-RECEIPT\n'
+      printf '%05000d\n' 0 >&2
+    else
+      printf 'Oreslang parse error at 2:4: rejected fixture in module diagnostics_test\n' >&2
+    fi
+    exit 42
+  fi
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
@@ -101,6 +111,47 @@ printf 'app started\n'
 EOS
 chmod +x "$tmp/fake-oreslang"
 export ORESLANG_BIN="$tmp/fake-oreslang"
+# Diagnostic aggregation must report five independent source units, in stable
+# path order, with compiler detail, and must never package invalid source.
+mkdir -p "$tmp/diagnostic-project/src"
+printf '[repository]\nrole = "api"\n' > "$tmp/diagnostic-project/oreslang-stack.toml"
+printf 'pub routine main(): void { return; }\n' > "$tmp/diagnostic-project/src/main.ores"
+for index in 01 02 03 04 05 06; do
+  printf 'define module diagnostics_test as\nend\n' > "$tmp/diagnostic-project/src/fault-$index.ores"
+done
+if MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-stdout" 2> "$tmp/diagnostic-stderr"; then
+  echo "multi-unit compiler errors must fail the build" >&2
+  exit 1
+fi
+for index in 01 02 03 04 05; do
+  grep -F "src/fault-$index.ores" "$tmp/diagnostic-stderr" > /dev/null
+  grep -F "error $((10#$index))/5: source unit" "$tmp/diagnostic-stderr" > /dev/null
+done
+if grep -F 'src/fault-06.ores' "$tmp/diagnostic-stderr"; then
+  echo "diagnostic aggregator must stop at five independent failures" >&2
+  exit 1
+fi
+test "$(grep -c 'Oreslang parse error at 2:4:' "$tmp/diagnostic-stderr")" -eq 5
+grep -F '5 failing source unit(s) shown (limit: 5)' "$tmp/diagnostic-stderr" > /dev/null
+test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# Check malicious stderr, unexpectedly emitted stdout, terminal escapes and
+# large compiler diagnostics without granting a success receipt.
+if MOCK_COMPILER_REJECT_FAULTS=true MOCK_COMPILER_UNSAFE_OUTPUT=true \
+    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-bad-stdout" 2> "$tmp/diagnostic-bad-stderr"; then
+  echo "unsafe compiler output must not pass the build" >&2
+  exit 1
+fi
+test ! -s "$tmp/diagnostic-bad-stdout"
+grep -F 'FORGED-SUCCESS-RECEIPT' "$tmp/diagnostic-bad-stderr" > /dev/null
+grep -F '[compiler output truncated at 4096 bytes]' "$tmp/diagnostic-bad-stderr" > /dev/null
+if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
+  echo "terminal escape reached CLI diagnostic output" >&2
+  exit 1
+fi
+test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
 # A receipt for another operation must never elevate a read-only request.
 for forced in dev build; do
   if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \

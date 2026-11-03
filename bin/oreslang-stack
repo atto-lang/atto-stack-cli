@@ -196,10 +196,24 @@ if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
+# Never print unbounded compiler output or terminal escape sequences from a
+# potentially malformed source file. Compiler diagnostics are untrusted text.
+# Capture still needs a future native structured diagnostic stream.
+print_bounded_compiler_output() {
+  local stream="$1" limit=4096 excerpt
+  [[ -s "$stream" ]] || return 0
+  # Redact the project root before printing any compiler-controlled text.
+  excerpt="$(LC_ALL=C head -c "$limit" "$stream")"
+  excerpt="${excerpt//"$root/"/}"
+  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?'
+  if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
+    printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
+  fi
+}
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
 compiler_check_all() {
-  local file checked=0 inventory symlinks
+  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out
   local -a profile_args=()
   if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
     profile_args+=("--release")
@@ -229,17 +243,50 @@ compiler_check_all() {
     echo "oreslang-stack: source inventory failed" >&2
     return 1
   fi
+  # A deterministic inventory makes the first five failures reproducible.
+  # Sort NUL-separated paths: source filenames may contain spaces or newlines.
+  if ! LC_ALL=C sort -z "$inventory" -o "$inventory"; then
+    rm -f "$inventory"
+    echo "oreslang-stack: unable to sort source inventory" >&2
+    return 1
+  fi
+  diagnostics="$(mktemp)"
+  diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
-    if ! "$oreslang_bin" "${profile_args[@]}" --check "$file"; then
-      rm -f "$inventory"
-      echo "oreslang-stack: compiler rejected $file" >&2
-      return 1
-    fi
     checked=$((checked + 1))
+    # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
+    # 1024-byte blocks. The cap is per file and scoped to the compiler only.
+    # A check operation should not materialize large compiled artifacts.
+    if ( ulimit -f 65536 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
+        >"$diagnostic_out" 2>"$diagnostics"; then
+      # Preserve compiler warnings emitted on successful checks, but never
+      # allow unchecked stdout to impersonate a successful build receipt.
+      print_bounded_compiler_output "$diagnostics" >&2
+      continue
+    fi
+    rejected=$((rejected + 1))
+    relative="${file#"$root/"}"
+    # Bash %q escapes control characters in unusual source file names.
+    # Bound the path label even for adversarially long nested paths.
+    if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
+    printf 'oreslang-stack: error %d/5: source unit %q (backend: graal)\n' \
+      "$rejected" "$relative" >&2
+    if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
+      echo '  compiler exited nonzero without diagnostic details' >&2
+    else
+      print_bounded_compiler_output "$diagnostics" >&2
+      print_bounded_compiler_output "$diagnostic_out" >&2
+    fi
+    if (( rejected >= 5 )); then break; fi
   done < "$inventory"
-  rm -f "$inventory"
+  rm -f "$diagnostics" "$diagnostic_out" "$inventory"
   if (( checked == 0 )); then
     echo "oreslang-stack: no .ores files to check" >&2
+    return 1
+  fi
+  if (( rejected > 0 )); then
+    printf 'oreslang-stack: build checks failed: %d failing source unit(s) shown (limit: 5); no bundle will be published\n' \
+      "$rejected" >&2
     return 1
   fi
 }
