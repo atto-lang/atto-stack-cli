@@ -192,7 +192,38 @@ if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
   fi
 fi
 
-if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores")"; then
+# The admission guest is untrusted. Do not put arbitrarily large stdout into a
+# shell variable or expose its raw stderr as terminal control sequences. Capture
+# under a private EXIT-cleaned workspace; never use this to certify compiler CI.
+capture_admission_receipt() (
+  umask 077
+  local workdir bytes filtered
+  if ! workdir="$(mktemp -d "${TMPDIR:-/tmp}/oreslang-stack-admission.XXXXXXXX")"; then
+    echo "oreslang-stack: admission capture workspace unavailable" >&2
+    return 1
+  fi
+  trap 'rm -rf -- "$workdir"' EXIT
+  if ! ( ulimit -f 2048 && "$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main.ores" ) \
+      > "$workdir/stdout" 2> "$workdir/stderr"; then
+    echo "oreslang-stack: admission guest failed (captured output withheld)" >&2
+    return 1
+  fi
+  bytes="$(wc -c < "$workdir/stdout")"
+  if (( bytes > 1048576 )); then
+    echo "oreslang-stack: admission receipt exceeds 1 MiB limit" >&2
+    return 1
+  fi
+  # Command substitution erases NUL bytes, potentially turning an invalid
+  # receipt into a valid one. Also reject terminal escapes and C0 controls,
+  # while preserving ordinary JSON whitespace and UTF-8 bytes.
+  filtered="$(LC_ALL=C tr -d '\000-\010\013\014\016-\037\177' < "$workdir/stdout" | wc -c)"
+  if (( filtered != bytes )); then
+    echo "oreslang-stack: unsafe control byte in admission receipt" >&2
+    return 1
+  fi
+  cat -- "$workdir/stdout"
+)
+if ! action="$(capture_admission_receipt)"; then
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
@@ -205,15 +236,16 @@ print_bounded_compiler_output() {
   # Redact the project root before printing any compiler-controlled text.
   excerpt="$(LC_ALL=C head -c "$limit" "$stream")"
   excerpt="${excerpt//"$root/"/}"
-  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?'
+  # Compiler-controlled lines must never impersonate top-level CLI status.
+  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?' | sed 's/^/    | /'
   if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
     printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
   fi
 }
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
-compiler_check_all() {
-  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out
+compiler_check_all() (
+  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out workdir exit_status
   local -a profile_args=()
   if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
     profile_args+=("--release")
@@ -237,40 +269,57 @@ compiler_check_all() {
     echo "oreslang-stack: source tree contains a symlink: $symlinks" >&2
     return 1
   fi
-  inventory="$(mktemp)"
+  # Keep diagnostic files private and clean on every exit path. The function
+  # runs in a subshell so its EXIT trap cannot override build artifact cleanup.
+  if ! workdir="$(umask 077; mktemp -d "${TMPDIR:-/tmp}/oreslang-stack-diag.XXXXXXXX")"; then
+    echo "oreslang-stack: cannot create private diagnostic workspace" >&2
+    return 1
+  fi
+  trap 'rm -rf -- "$workdir"' EXIT
+  inventory="$workdir/inventory"
+  diagnostics="$workdir/stderr"
+  diagnostic_out="$workdir/stdout"
   if ! find "$root/src" -type f -name '*.ores' -print0 > "$inventory"; then
-    rm -f "$inventory"
     echo "oreslang-stack: source inventory failed" >&2
     return 1
   fi
   # A deterministic inventory makes the first five failures reproducible.
   # Sort NUL-separated paths: source filenames may contain spaces or newlines.
   if ! LC_ALL=C sort -z "$inventory" -o "$inventory"; then
-    rm -f "$inventory"
     echo "oreslang-stack: unable to sort source inventory" >&2
     return 1
   fi
-  diagnostics="$(mktemp)"
-  diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
     checked=$((checked + 1))
-    # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
-    # 1024-byte blocks. The cap is per file and scoped to the compiler only.
-    # A check operation should not materialize large compiled artifacts.
-    if ( ulimit -f 65536 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
+    # A malicious or stuck compiler cannot exhaust the build disk with raw
+    # diagnostics. Bash ulimit -f counts 1024-byte blocks. Limit EACH output
+    # stream to 1 MiB; overflow is an execution failure, not a source error.
+    # The human-readable excerpt remains independently capped at 4096 bytes.
+    if ( ulimit -f 1024 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
         >"$diagnostic_out" 2>"$diagnostics"; then
       # Preserve compiler warnings emitted on successful checks, but never
       # allow unchecked stdout to impersonate a successful build receipt.
       print_bounded_compiler_output "$diagnostics" >&2
       continue
+    else
+      exit_status=$?
+    fi
+    # Tool/launcher failures are infrastructure failures, not independent
+    # source diagnostics. Stop immediately instead of consuming the five-error
+    # budget or continuing with an unusable compiler.
+    if (( exit_status == 126 || exit_status == 127 || exit_status >= 128 )); then
+      echo "oreslang-stack: compiler execution failed (exit: $exit_status); source rejection is NOT established" >&2
+      print_bounded_compiler_output "$diagnostics" >&2
+      print_bounded_compiler_output "$diagnostic_out" >&2
+      return 1
     fi
     rejected=$((rejected + 1))
     relative="${file#"$root/"}"
     # Bash %q escapes control characters in unusual source file names.
     # Bound the path label even for adversarially long nested paths.
     if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
-    printf 'oreslang-stack: error %d/5: source unit %q (backend: graal)\n' \
-      "$rejected" "$relative" >&2
+    printf 'oreslang-stack: error %d/5: source unit %q (compiler exit: %d; backend: graal)\n' \
+      "$rejected" "$relative" "$exit_status" >&2
     if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
       echo '  compiler exited nonzero without diagnostic details' >&2
     else
@@ -279,7 +328,6 @@ compiler_check_all() {
     fi
     if (( rejected >= 5 )); then break; fi
   done < "$inventory"
-  rm -f "$diagnostics" "$diagnostic_out" "$inventory"
   if (( checked == 0 )); then
     echo "oreslang-stack: no .ores files to check" >&2
     return 1
@@ -287,9 +335,12 @@ compiler_check_all() {
   if (( rejected > 0 )); then
     printf 'oreslang-stack: build checks failed: %d failing source unit(s) shown (limit: 5); no bundle will be published\n' \
       "$rejected" >&2
+    if (( rejected >= 5 )); then
+      echo "oreslang-stack: additional errors may exist; remaining units were not checked" >&2
+    fi
     return 1
   fi
-}
+)
 
 # Confirm the scaffold is complete, independent of the guest's success receipt.
 verify_initialized_project() {
@@ -440,7 +491,9 @@ case "$action" in
     printf '%s\n' 'This is NOT a compiled native artifact. The recorded build profile is an admission requirement for downstream compilation; it is not proof that a native artifact exists.'
     ;;
   *)
-    echo "oreslang-stack: ${action:-missing Oreslang admission receipt}" >&2
+    # Never echo an unrecognized guest-controlled receipt as a top-level CLI
+    # message: an arbitrary multiline value could forge error or success logs.
+    echo "oreslang-stack: rejected unrecognized guest action receipt" >&2
     exit 1
     ;;
 esac

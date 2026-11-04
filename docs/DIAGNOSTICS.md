@@ -46,10 +46,18 @@ inventory and now presents up to **five failing files**, with project-relative
 unit labels and bounded compiler diagnostic output from both stderr and stdout.
 Each emitted stream is truncated to 4096 bytes, terminal control characters
 are replaced, the configured project root is removed from displayed diagnostics,
-and the compiler's maximum file output size is capped at 64 MiB per file.
-Compiler stdout cannot forge a successful build receipt. This means **one
-independent failure per compiler invocation/file** today, not five separate
-errors inside a malformed file. The Java/Graal companion work improves typed
+and each raw compiler output stream is capped at 1 MiB per checked source unit; exceeding the cap is treated as a compiler execution failure, never a confirmed language error.
+Compiler stdout cannot forge a successful build receipt. Diagnostic lines are
+indented as untrusted compiler text, include compiler exit status, and are held
+in a private temporary workspace removed when the check subprocess exits,
+including failure paths. Exit 126/127 or a signal is identified as a compiler
+execution failure, **not confirmed source rejection**. When the fifth failing
+unit is reached, the output warns that additional errors may exist.
+
+This still means **one independent failure per compiler invocation/file** today,
+not five separate errors inside a malformed file. This bridge cannot infer
+whether nonzero compiler exit 1 is a language rejection rather than a tool
+or configuration failure without structured compiler diagnostics. The Java/Graal companion work improves typed
 source-unit/module attribution, and LLVM now prints bounded context. Actual
 native frontend diagnostic recovery across phases remains separate work.
 

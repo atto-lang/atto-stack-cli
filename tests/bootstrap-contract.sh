@@ -20,6 +20,14 @@ done
 if [[ "$compiler_check" == true ]]; then
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
+  if [[ -n "${MOCK_COMPILER_EXEC_FAILURE:-}" ]]; then
+    printf "compiler unavailable\\n" >&2
+    exit "$MOCK_COMPILER_EXEC_FAILURE"
+  fi
+  if [[ "${MOCK_COMPILER_EXCESSIVE_OUTPUT:-}" == true ]]; then
+    head -c 2000000 /dev/zero | LC_ALL=C tr '\000' X >&2
+    exit 0
+  fi
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
   if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
     if [[ "${MOCK_COMPILER_UNSAFE_OUTPUT:-}" == true ]]; then
@@ -34,6 +42,25 @@ if [[ "$compiler_check" == true ]]; then
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
+  # The admission receipt is not compiler output. A successful process with
+  # unsafe or excessive stdout must still fail command admission.
+  if [[ "${MOCK_GUEST_OVERSIZED_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check'
+    head -c 1100000 /dev/zero | LC_ALL=C tr '\000' X
+    exit 0
+  fi
+  if [[ "${MOCK_GUEST_NUL_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check\000'
+    exit 0
+  fi
+  if [[ "${MOCK_GUEST_ESC_RECEIPT:-}" == true ]]; then
+    printf 'ORESLANG_STACK_ACTION_v1:check\033'
+    exit 0
+  fi
+  if [[ "${MOCK_GUEST_FORGED_UNKNOWN_ACTION:-}" == true ]]; then
+    printf 'FORGED_SUCCESS_FROM_GUEST\nORESLANG_STACK_ACTION_v1:not-real\n'
+    exit 0
+  fi
   if [[ -n "${MOCK_GUEST_INVOCATION_FILE:-}" ]]; then
     printf 'invoked\n' > "$MOCK_GUEST_INVOCATION_FILE"
   fi
@@ -152,6 +179,83 @@ if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
   exit 1
 fi
 test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# A 2 MiB compiler stream exceeds the per-stream disk limit and must
+# fail closed. A resource-limit signal is not a proven source-language error.
+if MOCK_COMPILER_EXCESSIVE_OUTPUT=true \
+    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
+    > "$tmp/compiler-overflow-stdout" 2> "$tmp/compiler-overflow-stderr"; then
+  echo 'compiler output overflow must never permit artifact publication' >&2
+  exit 1
+fi
+test ! -s "$tmp/compiler-overflow-stdout"
+grep -F 'source rejection is NOT established' "$tmp/compiler-overflow-stderr" >/dev/null
+test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
+# Execution failures must not consume the independent source-error budget.
+for failure_status in 126 127 143; do
+  if MOCK_COMPILER_EXEC_FAILURE="$failure_status" \
+      "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+      > "$tmp/compiler-exec-stdout" 2> "$tmp/compiler-exec-stderr"; then
+    echo "compiler execution failure must fail closed: $failure_status" >&2
+    exit 1
+  fi
+  grep -F "compiler execution failed (exit: $failure_status)" "$tmp/compiler-exec-stderr" >/dev/null
+  grep -F 'source rejection is NOT established' "$tmp/compiler-exec-stderr" >/dev/null
+  if grep -F 'failing source unit(s) shown' "$tmp/compiler-exec-stderr"; then
+    echo 'execution failure misclassified as a source diagnostic' >&2
+    exit 1
+  fi
+  test ! -s "$tmp/compiler-exec-stdout"
+done
+# Invalid guest-admission receipts must fail closed, leave no stdout
+# receipts, and remove private temp workspaces even when the guest succeeded.
+mkdir -p "$tmp/admission-private-tmp"
+for mode in MOCK_GUEST_OVERSIZED_RECEIPT MOCK_GUEST_NUL_RECEIPT MOCK_GUEST_ESC_RECEIPT MOCK_GUEST_FORGED_UNKNOWN_ACTION; do
+  if env TMPDIR="$tmp/admission-private-tmp" "$mode=true" \
+      "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+      > "$tmp/admission-bad-stdout" 2> "$tmp/admission-bad-stderr"; then
+    echo "unsafe or excessive guest admission receipt was accepted: $mode" >&2
+    exit 1
+  fi
+  test ! -s "$tmp/admission-bad-stdout"
+  grep -F 'Oreslang command admission failed' "$tmp/admission-bad-stderr" >/dev/null
+  if grep -F 'FORGED_SUCCESS_FROM_GUEST' "$tmp/admission-bad-stderr"; then
+    echo "unrecognized guest action was echoed to top-level diagnostics" >&2
+    exit 1
+  fi
+  if [[ -n "$(find "$tmp/admission-private-tmp" -mindepth 1 -print -quit)" ]]; then
+    echo "admission capture workspace leaked: $mode" >&2
+    exit 1
+  fi
+done
+# A temporary directory for compiler stderr/stdout must not survive an error.
+mkdir -p "$tmp/diagnostic-private-tmp"
+if TMPDIR="$tmp/diagnostic-private-tmp" MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-private-stdout" 2> "$tmp/diagnostic-private-stderr"; then
+  echo "diagnostic source rejection must fail" >&2
+  exit 1
+fi
+if [[ -n "$(find "$tmp/diagnostic-private-tmp" -mindepth 1 -print -quit)" ]]; then
+  echo "diagnostic workspace was not cleaned after failure" >&2
+  exit 1
+fi
+grep -F 'compiler exit: 42; backend: graal' "$tmp/diagnostic-private-stderr" >/dev/null
+grep -F 'additional errors may exist' "$tmp/diagnostic-private-stderr" >/dev/null
+# Compiler-controlled lines are indented and cannot impersonate CLI status.
+grep -F '    | FORGED-SUCCESS-RECEIPT' "$tmp/diagnostic-bad-stderr" >/dev/null
+if grep -E '^FORGED-SUCCESS-RECEIPT|^oreslang-stack: build succeeded' \
+    "$tmp/diagnostic-bad-stderr"; then
+  echo "compiler stdout impersonated a top-level CLI receipt" >&2
+  exit 1
+fi
+# An unavailable private temp workspace is an infrastructure failure, never success.
+if TMPDIR="$tmp/nonexistent-private-tmp" MOCK_COMPILER_REJECT_FAULTS=true \
+    "$repo/bin/oreslang-stack" check --root "$tmp/diagnostic-project" \
+    > "$tmp/diagnostic-tmpfail-stdout" 2> "$tmp/diagnostic-tmpfail-stderr"; then
+  echo "missing diagnostic workspace must fail closed" >&2
+  exit 1
+fi
+grep -F 'cannot create private diagnostic workspace' "$tmp/diagnostic-tmpfail-stderr" >/dev/null
 # A receipt for another operation must never elevate a read-only request.
 for forced in dev build; do
   if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \
