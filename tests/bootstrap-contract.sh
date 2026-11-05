@@ -410,4 +410,15 @@ if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; the
   echo "non-Oreslang source receipt must fail" >&2
   exit 1
 fi
+# An unsupported backend must be rejected BEFORE a fake guest can report
+# successful initialization. This tests host admission rather than guest parity.
+mkdir -p "$tmp/llvm-before-guest"
+if MOCK_GUEST_INVOCATION_FILE="$tmp/llvm-guest-called" \
+    "$repo/bin/oreslang-stack" init --role api --backend llvm --root "$tmp/llvm-before-guest"; then
+  echo "unsupported LLVM init must never pass admission" >&2
+  exit 1
+fi
+test ! -e "$tmp/llvm-guest-called"
+test ! -e "$tmp/llvm-before-guest/src"
+
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
