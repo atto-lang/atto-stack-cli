@@ -421,4 +421,20 @@ fi
 test ! -e "$tmp/llvm-guest-called"
 test ! -e "$tmp/llvm-before-guest/src"
 
+# TOML supports trailing comments after a candidate role. The host must
+# recognize candidate-only isolation before running any guest compiler.
+for role in infra lambdas; do
+  root="$tmp/commented-$role"
+  mkdir -p "$root/src"
+  printf '[repository]\nrole = "%s" # no executable privileges\n' "$role" > "$root/oreslang-stack.toml"
+  printf 'pub routine main(): void { return; }\n' > "$root/src/main.ores"
+  marker="$tmp/commented-$role-invoked"
+  if MOCK_GUEST_INVOCATION_FILE="$marker" "$repo/bin/oreslang-stack" build --root "$root"; then
+    echo "commented candidate role must deny builds before guest: $role" >&2
+    exit 1
+  fi
+  test ! -e "$marker"
+  test ! -e "$root/dist"
+done
+
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'

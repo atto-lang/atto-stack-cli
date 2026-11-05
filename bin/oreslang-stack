@@ -184,7 +184,7 @@ esac
 # Independent host deny gate: no guest process starts for unsupported
 # operations on infra/Lambda candidates, even when role whitespace varies.
 if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
-  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*$' "$root/oreslang-stack.toml"; then
+  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*(#.*)?$' "$root/oreslang-stack.toml"; then
     case "$requested_command" in
       check|deploy) ;;
       *) echo "oreslang-stack: candidate-only role forbids this command" >&2; exit 2 ;;
