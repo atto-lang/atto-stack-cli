@@ -160,3 +160,14 @@ prove rather than silently weakening it.
 ## Development policy: no Python
 
 Python is prohibited in this repository for source code, tests, build tooling, code generation, CI, and automation. Existing Python tooling must be replaced with behavior-equivalent Rust rather than deleted without preserving its contract and coverage. Do not add Python source/notebooks, Python package manifests, `python`/`python3`, `pip`, `pytest`, `poetry`, `uv`, or Python setup actions. Rust tooling must pass `cargo fmt`, `cargo clippy -- -D warnings`, and `cargo test`.
+
+## Repository ownership and migration (2026-11-08)
+
+**Public language:** AttoLang; **current legacy home:** `ores-truffle-oreslang/oreslang-stack-cli`. Preserve old `.ores` files, `oreslang-*` repository, CLI, package and API names as compatibility surfaces pending a separately validated change.
+
+- **Belongs in this repository:** existing deployment-stack CLI interface, compatibility and pinned client integration tests.
+- **Does not belong here:** authoritative AttoCo production deployment/billing control plane.
+- **Organization boundary:** [atto-lang](https://github.com/atto-lang) hosts portable language semantics, compiler targets, standard libraries, SDKs, tooling, conformance and examples. [atto-co](https://github.com/atto-co) separately owns managed cloud deployment, identity, billing, tenant hosting, registries and commercial services. A pre-existing similarly named `atto-*` repo is not assumed to be a transferred copy of this Git repository.
+- **Initial migration proposal:** transfer this repository under the same name/ID to `atto-lang/oreslang-stack-cli` **only after** approval; no direct move from this old org into `atto-co` is currently authorized. Any future AttoCo product carve-out requires its own owner/security/consumer review.
+
+**Maintainer migration checklist:** coordinate ownership and exact source head in [issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26); follow the private [migration runbook draft #25](https://github.com/ores-truffle-oreslang/.github/pull/25). Inventory numeric repo ID and exact SHA/tree, PRs/releases, branch protections/rulesets, target visibility and permissions, Actions runners, secrets, webhooks, GitHub Apps, packages, Pages and consumer URLs; record source/target admin, independent security review and rollback owner. Never cross-org mirror private source without separate authorization. Perform only an authorized GitHub identity-preserving transfer; verify original ID/history/tree and restore controls afterward, update references incrementally and rerun **executed exact-head tests**. `steps=[]`/`null` is `NOT_EXECUTED`; host/static checks are not guest execution evidence or production safety proof.
