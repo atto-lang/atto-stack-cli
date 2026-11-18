@@ -1,5 +1,13 @@
 # Oreslang Stack CLI
 
+## AttoLang migration and current language specification (2026-11-18)
+
+**AttoLang** (formerly **Oreslang**) is the public language identity. This is the legacy `ores-truffle-oreslang/oreslang-stack-cli` checkout. A one-to-one AttoLang successor has not been verified; [atto-cli](https://github.com/atto-lang/atto-cli) is a related tool but is **not presumed to be an identical replacement**. A matching name or related tool does not establish transferred Git history, migrated issues/PRs, or backend parity.
+
+**[atto-spec](https://github.com/atto-lang/atto-spec)** is canonical for normative syntax, ownership, actors and effects; [atto-platform-conformance](https://github.com/atto-lang/atto-platform-conformance) owns portable positive/negative guest tests and [atto-common-source](https://github.com/atto-lang/atto-common-source) owns portable `.atto` libraries. Current proposals include `snake_case`, `borrow!`/`take!`/`copy!`/`copy!!`/`share!`, [implicit argument borrowing](https://github.com/atto-lang/atto-spec/blob/main/language/implicit-argument-borrow-v1.md), [file/module constants with permitted one-time `os.read_env`](https://github.com/atto-lang/atto-spec/blob/main/language/file-module-const-v1.md), and [`<<<`/`>>>`/`ashr` bitwise shifts distinct from `<<`/`>>` streams](https://github.com/atto-lang/atto-spec/blob/main/language/bitwise-and-stream-operators-v1.md). Design documents are not guest-runtime execution proof.
+
+Keep legacy `.ores`, command, package and ABI names until independently verified migration. No Python scripts, test tools or CI helpers in new AttoLang work; Rust support tools are preferred. Require exact SHA/tree, toolchain and executed positive/negative guest tests for language parity claims; host-only/zero-step CI is **not executed** guest evidence.
+
 ## Project identity: Oreslang Stack is not ORES Stack
 
 **Oreslang Stack** and **ORES Stack** are **separate projects with different CLIs and release tracks**. This repository provides the **Oreslang-native `oreslang-stack` CLI**, not the Rust `ores-stack` CLI.
