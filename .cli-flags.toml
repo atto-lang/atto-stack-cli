@@ -70,6 +70,20 @@ help = "Check generated output byte equality without writing."
 env = "ORESLANG_STACK_COMMAND_CHECK"
 help = "Check adapter drift and run the native Oreslang compiler on every source."
 
+[commands.check.flags.format_check]
+env = "ORESLANG_STACK_FORMAT_CHECK"
+aliases = ["format-check"]
+type = "bool"
+default = "false"
+help = "In addition to compiler diagnostics, require canonical formatting of every .ores source."
+
+[commands.build.flags.format_check]
+env = "ORESLANG_STACK_FORMAT_CHECK"
+aliases = ["format-check"]
+type = "bool"
+default = "false"
+help = "Reject non-canonical Oreslang source before creating a build bundle."
+
 [commands.dev]
 env = "ORESLANG_STACK_COMMAND_DEV"
 help = "Run the Oreslang application once with the Java/Graal runtime."

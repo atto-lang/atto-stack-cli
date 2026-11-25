@@ -20,11 +20,11 @@ if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
   cat <<'EOF'
 Usage: oreslang-stack init --role api|admin-api|web|admin-web|infra|lambdas [--root DIR]
        oreslang-stack dev [--root DIR] [--entry FILE] [--backend graal]
-       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal] [--release|--strict-aot|--hard-rt] [--freestanding]
+       oreslang-stack build [--root DIR] [--entry FILE] [--backend graal] [--release|--strict-aot|--hard-rt] [--freestanding] [--format-check]
        oreslang-stack deploy [--root DIR] [--target TARGET]
        oreslang-stack routes [--root DIR]
        oreslang-stack generate [--kind all|rpc|lambda|graphql] [--check] [--root DIR]
-       oreslang-stack check [--root DIR]
+       oreslang-stack check [--root DIR] [--format-check]
 
 Options are parsed by flags-2-env (.cli-flags.toml).
 init: fresh API/web routes or candidate-only infra/lambdas; refuses existing sources.
@@ -32,7 +32,7 @@ dev: run an Oreslang project once (watch/reload is not implemented).
 build: profile-aware compiler checks + source-only bundle (not a native artifact).
 routes: emit manifest from Oreslang-native route discovery.
 generate: Oreslang-native RPC/Lambda/GraphQL source generation and drift detection.
-check: validate all generated outputs and check every .ores file with the compiler.
+check: validate generated outputs, check every .ores file with the compiler; --format-check also runs oresfmt --check.
 deploy: always denied until a certified host adapter exists.
 EOF
   exit 0
@@ -51,13 +51,28 @@ case "$requested_command" in
   init|dev|build|deploy|routes|generate|check) ;;
   *) echo "oreslang-stack: unknown command: $requested_command" >&2; exit 2 ;;
 esac
-if ! exports="$("$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
+# Command selection and build/style admission flags are CLI-scoped. Remove
+# inherited values from the flags2env process itself; clearing them only after
+# shell-env returns is too late because the parser can observe its environment.
+if ! exports="$(env \
+  -u ORESLANG_STACK_COMMAND \
+  -u ORESLANG_STACK_ROOT \
+  -u ORESLANG_STACK_ENTRY \
+  -u ORESLANG_STACK_BACKEND \
+  -u ORESLANG_STACK_KIND \
+  -u ORESLANG_STACK_CHECK \
+  -u ORESLANG_STACK_ROLE \
+  -u ORESLANG_STACK_RELEASE \
+  -u ORESLANG_STACK_STRICT_AOT \
+  -u ORESLANG_STACK_HARD_RT \
+  -u ORESLANG_STACK_FREESTANDING \
+  -u ORESLANG_STACK_FORMAT_CHECK \
+  "$flags2env_bin" shell-env --config "$cli_home/.cli-flags.toml" -- oreslang-stack "$@")"; then
   echo "oreslang-stack: invalid flags-2-env arguments" >&2
   exit 2
 fi
-# Build-profile flags are command-scoped. Clear ambient values before applying
-# parser output so inherited environment cannot silently strengthen/weaken other commands.
-unset ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING
+# Also clear the current shell before applying the parser's explicit output.
+unset ORESLANG_STACK_COMMAND ORESLANG_STACK_ROOT ORESLANG_STACK_ENTRY ORESLANG_STACK_BACKEND ORESLANG_STACK_KIND ORESLANG_STACK_CHECK ORESLANG_STACK_ROLE ORESLANG_STACK_RELEASE ORESLANG_STACK_STRICT_AOT ORESLANG_STACK_HARD_RT ORESLANG_STACK_FREESTANDING ORESLANG_STACK_FORMAT_CHECK
 eval "$exports"
 if [[ "${ORESLANG_STACK_COMMAND:-}" != "$requested_command" ]]; then
   echo "oreslang-stack: flags2env command does not match requested command" >&2
@@ -84,6 +99,7 @@ export ORESLANG_STACK_RELEASE="${ORESLANG_STACK_RELEASE:-false}"
 export ORESLANG_STACK_STRICT_AOT="${ORESLANG_STACK_STRICT_AOT:-false}"
 export ORESLANG_STACK_HARD_RT="${ORESLANG_STACK_HARD_RT:-false}"
 export ORESLANG_STACK_FREESTANDING="${ORESLANG_STACK_FREESTANDING:-false}"
+export ORESLANG_STACK_FORMAT_CHECK="${ORESLANG_STACK_FORMAT_CHECK:-false}"
 if [[ "$requested_command" == "build" ]]; then
   selected_profiles=0
   [[ "$ORESLANG_STACK_RELEASE" == "true" ]] && selected_profiles=$((selected_profiles + 1))
@@ -184,7 +200,7 @@ esac
 # Independent host deny gate: no guest process starts for unsupported
 # operations on infra/Lambda candidates, even when role whitespace varies.
 if [[ -f "$root/oreslang-stack.toml" && "$requested_command" != "init" ]]; then
-  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*(#.*)?$' "$root/oreslang-stack.toml"; then
+  if grep -Eq '^[[:space:]]*role[[:space:]]*=[[:space:]]*"(infra|lambdas)"[[:space:]]*$' "$root/oreslang-stack.toml"; then
     case "$requested_command" in
       check|deploy) ;;
       *) echo "oreslang-stack: candidate-only role forbids this command" >&2; exit 2 ;;
@@ -196,24 +212,10 @@ if ! action="$("$oreslang_bin" "${admission_permissions[@]}" "$cli_home/src/main
   echo "oreslang-stack: Oreslang command admission failed" >&2
   exit 1
 fi
-# Never print unbounded compiler output or terminal escape sequences from a
-# potentially malformed source file. Compiler diagnostics are untrusted text.
-# Capture still needs a future native structured diagnostic stream.
-print_bounded_compiler_output() {
-  local stream="$1" limit=4096 excerpt
-  [[ -s "$stream" ]] || return 0
-  # Redact the project root before printing any compiler-controlled text.
-  excerpt="$(LC_ALL=C head -c "$limit" "$stream")"
-  excerpt="${excerpt//"$root/"/}"
-  printf '%s\n' "$excerpt" | LC_ALL=C tr -c '\11\12\40-\176' '?'
-  if [[ $(wc -c < "$stream") -gt "$limit" ]]; then
-    printf '\n[compiler output truncated at %d bytes]\n' "$limit" >&2
-  fi
-}
 # Compile all Oreslang units, not merely the application entrypoint.
 # This is an Oreslang compiler invocation, not a substitute source parser.
 compiler_check_all() {
-  local file relative checked=0 rejected=0 inventory symlinks diagnostics diagnostic_out
+  local file checked=0 inventory symlinks
   local -a profile_args=()
   if [[ "${ORESLANG_STACK_RELEASE:-false}" == "true" ]]; then
     profile_args+=("--release")
@@ -243,50 +245,35 @@ compiler_check_all() {
     echo "oreslang-stack: source inventory failed" >&2
     return 1
   fi
-  # A deterministic inventory makes the first five failures reproducible.
-  # Sort NUL-separated paths: source filenames may contain spaces or newlines.
-  if ! LC_ALL=C sort -z "$inventory" -o "$inventory"; then
-    rm -f "$inventory"
-    echo "oreslang-stack: unable to sort source inventory" >&2
-    return 1
-  fi
-  diagnostics="$(mktemp)"
-  diagnostic_out="$(mktemp)"
   while IFS= read -r -d '' file; do
+    # Exercise the canonical public compiler spelling; the launcher maps
+    # `check` to the same linked admission path as legacy `--check`.
+    if ! "$oreslang_bin" check "${profile_args[@]}" "$file"; then
+      rm -f "$inventory"
+      echo "oreslang-stack: compiler rejected $file" >&2
+      return 1
+    fi
     checked=$((checked + 1))
-    # Refuse unbounded file-backed compiler output; Bash ulimit -f uses
-    # 1024-byte blocks. The cap is per file and scoped to the compiler only.
-    # A check operation should not materialize large compiled artifacts.
-    if ( ulimit -f 65536 && "$oreslang_bin" "${profile_args[@]}" --check "$file" ) \
-        >"$diagnostic_out" 2>"$diagnostics"; then
-      # Preserve compiler warnings emitted on successful checks, but never
-      # allow unchecked stdout to impersonate a successful build receipt.
-      print_bounded_compiler_output "$diagnostics" >&2
-      continue
-    fi
-    rejected=$((rejected + 1))
-    relative="${file#"$root/"}"
-    # Bash %q escapes control characters in unusual source file names.
-    # Bound the path label even for adversarially long nested paths.
-    if (( ${#relative} > 240 )); then relative="${relative:0:240}..."; fi
-    printf 'oreslang-stack: error %d/5: source unit %q (backend: graal)\n' \
-      "$rejected" "$relative" >&2
-    if [[ ! -s "$diagnostics" && ! -s "$diagnostic_out" ]]; then
-      echo '  compiler exited nonzero without diagnostic details' >&2
-    else
-      print_bounded_compiler_output "$diagnostics" >&2
-      print_bounded_compiler_output "$diagnostic_out" >&2
-    fi
-    if (( rejected >= 5 )); then break; fi
   done < "$inventory"
-  rm -f "$diagnostics" "$diagnostic_out" "$inventory"
+  rm -f "$inventory"
   if (( checked == 0 )); then
     echo "oreslang-stack: no .ores files to check" >&2
     return 1
   fi
-  if (( rejected > 0 )); then
-    printf 'oreslang-stack: build checks failed: %d failing source unit(s) shown (limit: 5); no bundle will be published\n' \
-      "$rejected" >&2
+}
+
+# Optional style admission is deliberately separate from syntax validation:
+# only a real compiler can establish parsing, imports and typed admission.
+# Never rewrite user or generated sources during check/build.
+formatter_check_all() {
+  [[ "${ORESLANG_STACK_FORMAT_CHECK:-false}" == "true" ]] || return 0
+  local formatter="${ORESFMT_BIN:-oresfmt}"
+  if ! command -v "$formatter" >/dev/null 2>&1; then
+    echo "oreslang-stack: --format-check requires oresfmt (set ORESFMT_BIN)" >&2
+    return 127
+  fi
+  if ! "$formatter" --check "$root/src"; then
+    echo "oreslang-stack: canonical formatter check failed" >&2
     return 1
   fi
 }
@@ -357,6 +344,7 @@ case "$action" in
   ORESLANG_STACK_ACTION_v1:check)
     [[ "${ORESLANG_STACK_COMMAND:-}" == "check" ]] || exit 1
     compiler_check_all
+    formatter_check_all
     printf '%s\n' "all generated adapters and Oreslang sources verified"
     ;;
   ORESLANG_STACK_ACTION_v1:dev)
@@ -372,6 +360,10 @@ case "$action" in
       echo "oreslang-stack: compiler check failed; refusing to create a bundle" >&2
       exit 1
     fi
+    if ! formatter_check_all; then
+      echo "oreslang-stack: formatter check failed; refusing to create a bundle" >&2
+      exit 1
+    fi
     # Current compiler --build-analysis is NOT a machine-code artifact.
     # Package only author-owned source, never mislabel it native/deployable.
     if [[ ! -d "$root/src" || -L "$root/src" ]]; then
@@ -380,6 +372,19 @@ case "$action" in
     fi
     if [[ -n "$(find "$root/src" -type l -print -quit)" ]]; then
       echo "oreslang-stack: symlink inside src refused" >&2
+      exit 1
+    fi
+    hardlinked_source="$(find "$root/src" -type f -links +1 -print -quit)"
+    if [[ -n "$hardlinked_source" ]]; then
+      echo "oreslang-stack: hardlinked source file refused: $hardlinked_source" >&2
+      exit 1
+    fi
+    if [[ ! -f "$root/oreslang-stack.toml" || -L "$root/oreslang-stack.toml" ]]; then
+      echo "oreslang-stack: project manifest missing or unsafe" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/oreslang-stack.toml" -type f -links +1 -print -quit)" ]]; then
+      echo "oreslang-stack: hardlinked project manifest refused" >&2
       exit 1
     fi
     if [[ -e "$root/dist" && ( ! -d "$root/dist" || -L "$root/dist" ) ]]; then
@@ -403,6 +408,10 @@ case "$action" in
     # runner are packaged. Secrets and .env files are intentionally excluded.
     if [[ ! -s "$root/generated/route-manifest.json" || -L "$root/generated/route-manifest.json" ]]; then
       echo "oreslang-stack: generated route manifest missing or symlinked" >&2
+      exit 1
+    fi
+    if [[ -n "$(find "$root/generated/route-manifest.json" -type f -links +1 -print -quit)" ]]; then
+      echo "oreslang-stack: hardlinked route manifest refused" >&2
       exit 1
     fi
     stage="$(mktemp -d "$root/dist/.oreslang-stage.XXXXXXXX")"

@@ -1,6 +1,6 @@
-> **AI agent instructions (organization-wide):** Before working on code, issues, or pull requests, read and follow the [organization `AGENTS.md`](https://github.com/ores-truffle-oreslang/.github/blob/main/AGENTS.md), including its **merge-first stealth-development policy**. Honor any repository-local `AGENTS.md`, explicit holds, and GitHub-enforced rules.
-
 # Oreslang Stack CLI
+
+> **AI agent instructions (organization-wide):** Before working on code, issues, or pull requests, read and follow the [organization `AGENTS.md`](https://github.com/ores-truffle-oreslang/.github/blob/main/AGENTS.md), including its **merge-first stealth-development policy**. Honor any repository-local `AGENTS.md`, explicit holds, and GitHub-enforced rules.
 
 ## AttoLang migration and current language specification (2026-11-18)
 
@@ -48,6 +48,7 @@ oreslang-stack routes --root examples/hello-api
 oreslang-stack generate --kind all --root examples/hello-api
 oreslang-stack generate --kind all --check --root examples/hello-api
 oreslang-stack check --root examples/hello-api
+oreslang-stack check --format-check --root examples/hello-api
 oreslang-stack build --root examples/hello-api
 # Expected to fail closed: deployment has no certified backend yet.
 oreslang-stack deploy --root examples/hello-api --target oreslang-stack
@@ -59,7 +60,7 @@ oreslang-stack deploy --root examples/hello-api --target oreslang-stack
 | `dev` | Oreslang discovers and generates adapters, then launches the app with the Java/Graal runtime; launch-once, not a live-reload watcher |
 | `routes` | Native Oreslang recursive discovery produces deterministic JSON route inventory |
 | `generate` | Native Oreslang writes `rpc.ores`, `lambda.ores` and a route manifest; `--check` verifies byte equality without writes |
-| `check` | Native generation drift check followed by real Oreslang compiler `--check` on each `.ores` source |
+| `check` | Native generation drift check followed by real `oreslang check` on each `.ores` source; optional `--format-check` also requires read-only `oresfmt --check` |
 | `build` | Generation, compiler checks, a source distribution containing a runnable `bin/oreslang-stack-run` (requires installed Oreslang); **not a compiled native/JVM/WASM executable** |
 | `deploy` | Explicit **hard failure** until a backend-specific certified deploy adapter exists |
 
@@ -138,7 +139,18 @@ The schema is [`.cli-flags.toml`](.cli-flags.toml), not a home-grown argv parser
 bash tests/bootstrap-contract.sh
 # Only after installing a real Oreslang runtime with PR #496:
 bash tests/native-generator-contract.sh
+
+# Cross-toolchain release gate: requires reviewed real binaries.
+ORESLANG_BIN=/path/to/oreslang \
+ORESFMT_BIN=/path/to/oresfmt \
+  bash tests/real-toolchain-format-contract.sh
 ```
+
+The real-toolchain contract checks compact-but-valid syntax before formatting,
+byte-idempotent formatting, compiler rejection after formatting malformed input,
+compiler-before-formatter build ordering, no source rewrite during check/build,
+style-only build refusal, and a successful canonical `build --format-check`.
+It intentionally refuses to substitute mocks for either `oreslang` or `oresfmt`.
 
 Tests using a mock Oreslang command only prove host bootstrap behavior,
 **not native language compilation**. Full native generator tests require the
@@ -178,3 +190,40 @@ The historical predecessor was `ores-truffle-oreslang/oreslang-stack-cli`. The p
 The stack CLI and pinned client integration contracts belong here; the managed production deployment, billing and identity control plane does not. [atto-lang](https://github.com/atto-lang) maintains language, portable libraries and tooling; [atto-co](https://github.com/atto-co) separately governs commercial deployment, tenancy, identity and billing. Further original-ID transfers or commercial carve-outs require separate owner authorization and independent security review. This document authorizes no transfer or private-source mirror.
 
 Before an authorized transfer, coordinate in [migration issue #26](https://github.com/ores-truffle-oreslang/.github/issues/26) and review the authorized runbook. Record source and target administrators, numeric repository ID, exact SHA/tree, history, visibility, access and rulesets, PRs/issues, releases, packages, consumers, CI/runners, secrets, deploy keys, apps, webhooks, Pages and rollback ownership. Verify unchanged ID/history/tree and restored controls after transfer, then execute exact-head tests before changing consumers. Zero-step jobs are NOT_EXECUTED; host-only and source-free checks do not certify compiled guest execution or production capabilities.
+
+## Compiler and formatter together
+
+`oreslang-stack check` is **always a real compiler validation**: it invokes
+Java/GraalVM `oreslang check` for syntax, linked imports and other admitted
+semantics without executing the application. Legacy `--check` is only an alias;
+the stack integration exercises the public subcommand. A formatter cannot
+replace this step.
+
+For a read-only **combined syntax + canonical style gate**, install the
+`oresfmt` binary from `oreslang-format`, then run:
+
+```sh
+oreslang-stack check --root . --format-check
+oreslang-stack build --root . --format-check
+```
+
+`ORESFMT_BIN` may point to the reviewed formatter executable. Both options
+run compiler checks before `oresfmt --check <project>/src`. A missing formatter,
+noncanonical source, or compiler error fails the command; an opted-in build
+produces **no bundle** on refusal. Neither check nor build automatically
+rewrites source. The format gate is opt-in pending conversion of the existing
+native generator templates and real Java/LLVM format-parse differential gates.
+
+The canonical format has two-space indentation and no same-line executable
+statements or compact keyword control blocks. For example, `if foo then
+x(); fi` formats to:
+
+```ores
+if foo then
+  x();
+fi
+```
+
+The formatter retains the original action: formatting is never permission to
+change `x()` into another call. Ordinary syntax errors remain the compiler's
+responsibility; passing `oresfmt --check` cannot certify valid Oreslang.

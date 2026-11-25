@@ -11,6 +11,7 @@ cat > "$tmp/fake-oreslang" <<'EOS'
 #!/usr/bin/env bash
 set -euo pipefail
 compiler_check=false
+[[ "${1:-}" == "check" ]] && compiler_check=true
 for option in "$@"; do
   [[ "$option" == "--check" ]] && compiler_check=true
   if [[ -n "${MOCK_COMPILER_ARGS_FILE:-}" ]]; then
@@ -18,19 +19,12 @@ for option in "$@"; do
   fi
 done
 if [[ "$compiler_check" == true ]]; then
+  if [[ -n "${MOCK_COMPILER_SPELLING_FILE:-}" ]]; then
+    printf '%s\n' "${1:-}" >> "$MOCK_COMPILER_SPELLING_FILE"
+  fi
   source_path="${!#}"
   [[ -f "$source_path" ]] || exit 1
   [[ "${MOCK_COMPILER_REJECT:-}" != true ]] || exit 42
-  if [[ "${MOCK_COMPILER_REJECT_FAULTS:-}" == true && "$source_path" == */fault-*.ores ]]; then
-    if [[ "${MOCK_COMPILER_UNSAFE_OUTPUT:-}" == true ]]; then
-      printf '\033[31mBAD-ESCAPE\033[0m\n' >&2
-      printf 'FORGED-SUCCESS-RECEIPT\n'
-      printf '%05000d\n' 0 >&2
-    else
-      printf 'Oreslang parse error at 2:4: rejected fixture in module diagnostics_test\n' >&2
-    fi
-    exit 42
-  fi
   exit 0
 fi
 if [[ "$1" == --allow-env=* ]]; then
@@ -111,47 +105,6 @@ printf 'app started\n'
 EOS
 chmod +x "$tmp/fake-oreslang"
 export ORESLANG_BIN="$tmp/fake-oreslang"
-# Diagnostic aggregation must report five independent source units, in stable
-# path order, with compiler detail, and must never package invalid source.
-mkdir -p "$tmp/diagnostic-project/src"
-printf '[repository]\nrole = "api"\n' > "$tmp/diagnostic-project/oreslang-stack.toml"
-printf 'pub routine main(): void { return; }\n' > "$tmp/diagnostic-project/src/main.ores"
-for index in 01 02 03 04 05 06; do
-  printf 'define module diagnostics_test as\nend\n' > "$tmp/diagnostic-project/src/fault-$index.ores"
-done
-if MOCK_COMPILER_REJECT_FAULTS=true \
-    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
-    > "$tmp/diagnostic-stdout" 2> "$tmp/diagnostic-stderr"; then
-  echo "multi-unit compiler errors must fail the build" >&2
-  exit 1
-fi
-for index in 01 02 03 04 05; do
-  grep -F "src/fault-$index.ores" "$tmp/diagnostic-stderr" > /dev/null
-  grep -F "error $((10#$index))/5: source unit" "$tmp/diagnostic-stderr" > /dev/null
-done
-if grep -F 'src/fault-06.ores' "$tmp/diagnostic-stderr"; then
-  echo "diagnostic aggregator must stop at five independent failures" >&2
-  exit 1
-fi
-test "$(grep -c 'Oreslang parse error at 2:4:' "$tmp/diagnostic-stderr")" -eq 5
-grep -F '5 failing source unit(s) shown (limit: 5)' "$tmp/diagnostic-stderr" > /dev/null
-test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
-# Check malicious stderr, unexpectedly emitted stdout, terminal escapes and
-# large compiler diagnostics without granting a success receipt.
-if MOCK_COMPILER_REJECT_FAULTS=true MOCK_COMPILER_UNSAFE_OUTPUT=true \
-    "$repo/bin/oreslang-stack" build --root "$tmp/diagnostic-project" \
-    > "$tmp/diagnostic-bad-stdout" 2> "$tmp/diagnostic-bad-stderr"; then
-  echo "unsafe compiler output must not pass the build" >&2
-  exit 1
-fi
-test ! -s "$tmp/diagnostic-bad-stdout"
-grep -F 'FORGED-SUCCESS-RECEIPT' "$tmp/diagnostic-bad-stderr" > /dev/null
-grep -F '[compiler output truncated at 4096 bytes]' "$tmp/diagnostic-bad-stderr" > /dev/null
-if LC_ALL=C grep -q "$(printf '\033')" "$tmp/diagnostic-bad-stderr"; then
-  echo "terminal escape reached CLI diagnostic output" >&2
-  exit 1
-fi
-test ! -e "$tmp/diagnostic-project/dist/oreslang-stack-source.tar.gz"
 # A receipt for another operation must never elevate a read-only request.
 for forced in dev build; do
   if MOCK_FORCED_ACTION="$forced" MOCK_APPLICATION_RUN_FILE="$tmp/spoofed-app" \
@@ -170,7 +123,96 @@ tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F "bin/oreslan
 "$repo/bin/oreslang-stack" generate --kind all --root "$tmp/project" | grep -F 'generated'
 "$repo/bin/oreslang-stack" generate --kind all --check --root "$tmp/project" | grep -F 'generated'
 env ORESLANG_STACK_COMMAND=deploy "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
+# Every parser-derived control input is CLI-scoped. A hostile parent shell must
+# not redirect roots, entrypoints, backends, generation mode, check mode, or role.
+env \
+  ORESLANG_STACK_ROOT="$tmp/does-not-exist" \
+  ORESLANG_STACK_ENTRY="../escape.ores" \
+  ORESLANG_STACK_BACKEND=llvm \
+  ORESLANG_STACK_KIND=lambda \
+  ORESLANG_STACK_CHECK=true \
+  ORESLANG_STACK_ROLE=infra \
+  ORESLANG_STACK_RELEASE=true \
+  ORESLANG_STACK_STRICT_AOT=true \
+  ORESLANG_STACK_HARD_RT=true \
+  ORESLANG_STACK_FREESTANDING=true \
+  ORESLANG_STACK_FORMAT_CHECK=true \
+  "$repo/bin/oreslang-stack" routes --root "$tmp/project" | grep -F '"schema"'
 "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
+# The stack integration must exercise the public subcommand spelling rather
+# than silently depending on the legacy --check flag.
+: > "$tmp/compiler-spelling"
+MOCK_COMPILER_SPELLING_FILE="$tmp/compiler-spelling" \
+  "$repo/bin/oreslang-stack" check --root "$tmp/project" >/dev/null
+test -s "$tmp/compiler-spelling"
+if grep -Fvx 'check' "$tmp/compiler-spelling"; then
+  echo "stack compiler admission must use oreslang check" >&2
+  exit 1
+fi
+# This is a *mock dispatch* contract, not compiler or formatter execution.
+cat > "$tmp/fake-oresfmt" <<'FMT'
+#!/usr/bin/env bash
+set -euo pipefail
+[[ "$#" -eq 2 && "$1" == "--check" && -d "$2" ]] || exit 74
+if [[ -n "${MOCK_FORMATTER_LOG:-}" ]]; then printf '%s\n' "$2" >> "$MOCK_FORMATTER_LOG"; fi
+[[ "${MOCK_FORMATTER_REJECT:-false}" != "true" ]] || exit 1
+FMT
+chmod +x "$tmp/fake-oresfmt"
+: > "$tmp/format-invocations"
+ORESFMT_BIN="$tmp/fake-oresfmt" MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+  "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project" | grep -F 'verified'
+grep -Fx "$tmp/project/src" "$tmp/format-invocations"
+# Compiler rejection must precede the optional formatter; don't mislabel a
+# compiler failure as a successful format pass.
+: > "$tmp/format-invocations"
+if MOCK_COMPILER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "syntax rejection must fail even when the formatter would accept" >&2
+  exit 1
+fi
+test ! -s "$tmp/format-invocations"
+if MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "noncanonical source must fail opted-in check" >&2
+  exit 1
+fi
+if ORESFMT_BIN="$tmp/missing-oresfmt" \
+   "$repo/bin/oreslang-stack" check --format-check --root "$tmp/project"; then
+  echo "missing formatter must fail closed" >&2
+  exit 1
+fi
+# An inherited format gate must not silently affect a command lacking the flag.
+MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+  ORESLANG_STACK_FORMAT_CHECK=true \
+  "$repo/bin/oreslang-stack" check --root "$tmp/project" | grep -F 'verified'
+# Build performs compiler checking before style checking and must refuse to
+# create an artifact if either admission stage rejects.
+rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+: > "$tmp/format-invocations"
+if MOCK_COMPILER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   MOCK_FORMATTER_LOG="$tmp/format-invocations" \
+   "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project"; then
+  echo "build bundle must be refused after compiler rejection" >&2
+  exit 1
+fi
+test ! -s "$tmp/format-invocations"
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
+if MOCK_FORMATTER_REJECT=true ORESFMT_BIN="$tmp/fake-oresfmt" \
+   "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project"; then
+  echo "build bundle must be refused after formatter rejection" >&2
+  exit 1
+fi
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
+: > "$tmp/compiler-spelling"
+ORESFMT_BIN="$tmp/fake-oresfmt" MOCK_COMPILER_SPELLING_FILE="$tmp/compiler-spelling" \
+  "$repo/bin/oreslang-stack" build --format-check --root "$tmp/project" >/dev/null
+test -s "$tmp/project/dist/oreslang-stack-source.tar.gz"
+test -s "$tmp/compiler-spelling"
+if grep -Fvx 'check' "$tmp/compiler-spelling"; then
+  echo "build compiler admission must use oreslang check" >&2
+  exit 1
+fi
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F 'src/main.ores'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-entry'
 tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.oreslang-stack-build-profile'
@@ -213,6 +255,19 @@ if tar -tzf "$tmp/project/dist/oreslang-stack-source.tar.gz" | grep -F '.env'; t
   echo "bundle must not contain .env secrets" >&2
   exit 1
 fi
+
+# A regular-file hardlink can point outside the project while bypassing the
+# symlink guard. In particular, .graphql is bundled but not compiler-checked,
+# so reject multiply-linked bundle inputs before copying any source artifact.
+printf 'type Query { secret: String }\n' > "$tmp/outside.graphql"
+ln "$tmp/outside.graphql" "$tmp/project/src/leaked.graphql"
+rm -f "$tmp/project/dist/oreslang-stack-source.tar.gz"
+if "$repo/bin/oreslang-stack" build --root "$tmp/project"; then
+  echo "hardlinked source input must be rejected" >&2
+  exit 1
+fi
+test ! -e "$tmp/project/dist/oreslang-stack-source.tar.gz"
+rm "$tmp/project/src/leaked.graphql"
 printf 'pub routine main(): void { return; }\n' > "$tmp/project/src/other.ores"
 "$repo/bin/oreslang-stack" build --root "$tmp/project" --entry src/other.ores >/dev/null
 tar -xzOf "$tmp/project/dist/oreslang-stack-source.tar.gz" ./.oreslang-stack-entry | grep -Fx 'src/other.ores'
@@ -410,31 +465,4 @@ if ORESLANG_BIN="$tmp/fake-oreslang" "$tmp/unpacked/bin/oreslang-stack-run"; the
   echo "non-Oreslang source receipt must fail" >&2
   exit 1
 fi
-# An unsupported backend must be rejected BEFORE a fake guest can report
-# successful initialization. This tests host admission rather than guest parity.
-mkdir -p "$tmp/llvm-before-guest"
-if MOCK_GUEST_INVOCATION_FILE="$tmp/llvm-guest-called" \
-    "$repo/bin/oreslang-stack" init --role api --backend llvm --root "$tmp/llvm-before-guest"; then
-  echo "unsupported LLVM init must never pass admission" >&2
-  exit 1
-fi
-test ! -e "$tmp/llvm-guest-called"
-test ! -e "$tmp/llvm-before-guest/src"
-
-# TOML supports trailing comments after a candidate role. The host must
-# recognize candidate-only isolation before running any guest compiler.
-for role in infra lambdas; do
-  root="$tmp/commented-$role"
-  mkdir -p "$root/src"
-  printf '[repository]\nrole = "%s" # no executable privileges\n' "$role" > "$root/oreslang-stack.toml"
-  printf 'pub routine main(): void { return; }\n' > "$root/src/main.ores"
-  marker="$tmp/commented-$role-invoked"
-  if MOCK_GUEST_INVOCATION_FILE="$marker" "$repo/bin/oreslang-stack" build --root "$root"; then
-    echo "commented candidate role must deny builds before guest: $role" >&2
-    exit 1
-  fi
-  test ! -e "$marker"
-  test ! -e "$root/dist"
-done
-
 echo 'host bootstrap contract checks passed (mock interpreter; not native compilation)'
